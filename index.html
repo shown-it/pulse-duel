@@ -464,8 +464,8 @@
           <h1>PULSE//DUEL</h1>
           <p class="tagline">ADVANCE. CATCH. RETURN.</p>
           <p class="lead">
-            ヴェクター空間を前進し、敵編隊と接触すると自動停止。<br>
-            生存機が放つ2発の弾を左右の手で別々につかみ、保持した手を大きく速く振って投げ返してください。
+            ヴェクター空間を前進し続け、次々出現する敵の連続弾をキャッチ。<br>
+            両手の弾を接触させると合体し、3体貫通の強力弾に。30体撃破でボスが出現します。
           </p>
           <div class="buttons">
             <button class="button" id="cameraStart">CAMERA LINK</button>
@@ -507,7 +507,7 @@
     </main>
 
     <footer class="footer">
-      <span>DUAL HAND CONTACT / HOLD　SWING HARD TO RETURN　<kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></span>
+      <span>DUAL HOLD → HANDS TOGETHER / FUSION　SWING HARD TO RETURN　<kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></span>
       <button class="text-button" id="reset">R / RESET</button>
     </footer>
   </div>
@@ -552,6 +552,9 @@
     const HAND_IDS = ['Left', 'Right'];
     const THROW_DISTANCE = 0.13;
     const THROW_SPEED = 0.0003;
+    const KILL_GOAL = 30;
+    const MAX_ACTIVE_ENEMIES = 8;
+    const FUSION_DISTANCE = 82;
 
     const labels = {
       idle: 'IDLE', intro: 'LINKED', advance: 'FORWARD DRIVE', encounter: 'CONTACT', read: 'CORE CHARGE',
@@ -571,7 +574,8 @@
       finalIndex: 0, finalDeadline: 0, hitUntil: 0, hurtUntil: 0, targetHitUntil: 0,
       warningAnnounced: false, lastDamage: 25,
       travel: 0, lastUpdateAt: performance.now(), bossPending: false,
-      wavePlan: [5, 8, 12], waveIndex: 0, bossPortIndex: 0,
+      kills: 0, spawnSerial: 0, nextEnemySpawnAt: 0, nextEnemyShotAt: 0, shotSerial: 0,
+      fusionSerial: 0, bossPortIndex: 0,
       attackers: [], attackOffsets: [], playerShots: [], exchangeClosing: false,
       stats: { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 }
     };
@@ -612,6 +616,52 @@
 
     function heldHands() {
       return handStates().filter(hand => hand.held);
+    }
+
+    function fusedHold() {
+      const left = input.hands.Left;
+      const right = input.hands.Right;
+      if (!left.held?.fused || !right.held?.fused) return null;
+      return left.held.fusionId === right.held.fusionId ? left.held : null;
+    }
+
+    function fusionCenter() {
+      const left = input.hands.Left;
+      const right = input.hands.Right;
+      return {
+        x: (left.x + right.x) * W * 0.5,
+        y: (left.y + right.y) * H * 0.5
+      };
+    }
+
+    function tryFuseHeldShots(now) {
+      const left = input.hands.Left;
+      const right = input.hands.Right;
+      if (!left.visible || !right.visible || !left.held || !right.held || fusedHold()) return false;
+      const gap = Math.hypot((left.x - right.x) * W, (left.y - right.y) * H);
+      if (gap > FUSION_DISTANCE) return false;
+      const center = fusionCenter();
+      const fused = {
+        fused: true,
+        fusionId: ++game.fusionSerial,
+        enemyIndex: left.held.enemyIndex,
+        enemyIndices: [left.held.enemyIndex, right.held.enemyIndex],
+        color: (left.held.color + right.held.color + 1) % COLORS.length,
+        capturedAt: now,
+        lastPoint: center
+      };
+      left.held = fused;
+      right.held = fused;
+      const fusionPower = Math.min(1, Math.max(left.shakePower, right.shakePower) + 0.35);
+      left.shakePower = fusionPower;
+      right.shakePower = fusionPower;
+      resetAttackMotion(left, now);
+      resetAttackMotion(right, now);
+      burst(center.x, center.y, 72);
+      say('DUAL PULSE FUSION', 'どちらかの手を強く振って3体貫通 / BOSS大ダメージ');
+      tone(180, 0.16, 0.05);
+      setTimeout(() => tone(720, 0.2, 0.045), 70);
+      return true;
     }
 
     function clearHandActions() {
@@ -669,14 +719,10 @@
         const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
         if (game.state === 'idle') {
           ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
-          ui.enemyHp.textContent = 'WAVES 5 / 8 / 12';
+          ui.enemyHp.textContent = '30 KILLS / BOSS';
         } else {
-          ui.targetName.textContent = game.state === 'advance'
-            ? (game.bossPending ? 'FORWARD SCAN / BOSS SIGNAL' : 'FORWARD SCAN / NEXT WAVE')
-            : `HOSTILE WAVE ${game.waveIndex + 1}/3`;
-          ui.enemyHp.textContent = game.state === 'advance'
-            ? (game.bossPending ? 'BOSS INBOUND' : `WAVE ${Math.min(3, game.waveIndex + 1)} INBOUND`)
-            : `${alive} ACTIVE`;
+          ui.targetName.textContent = `HOSTILE STREAM / ${Math.min(game.kills, KILL_GOAL)}/${KILL_GOAL}`;
+          ui.enemyHp.textContent = `${alive} ACTIVE / ${Math.min(game.kills, KILL_GOAL)} DOWN`;
         }
         ui.enemyHealths.forEach((bar, index) => {
           const enemy = game.enemies[index];
@@ -719,7 +765,12 @@
       game.phase = 'squad';
       game.playerHp = 100;
       game.enemies = [];
-      game.waveIndex = 0;
+      game.kills = 0;
+      game.spawnSerial = 0;
+      game.nextEnemySpawnAt = now;
+      game.nextEnemyShotAt = now + 1100;
+      game.shotSerial = 0;
+      game.fusionSerial = 0;
       game.activeEnemy = 0;
       game.shooterCursor = 0;
       game.finalIndex = 0;
@@ -762,32 +813,44 @@
       clearHandActions();
       game.guardAt = -Infinity;
       game.guardPoint = null;
-      setState('advance', now);
+      setState('attack', now);
       updateHud();
       if (bossPending) {
-        say('SECTOR CLEAR / FORWARD', '巨大反応まで航行を継続');
-        game.nextAt = now + 4200;
+        beginBossWarning(now);
       } else {
-        say(firstRun ? 'FORWARD DRIVE ONLINE' : 'FORWARD DRIVE RESUMED', '次の接触まで自動前進');
-        game.nextAt = now + (firstRun ? 1800 : 2200);
+        game.enemies = [];
+        game.nextEnemySpawnAt = now + (firstRun ? 300 : 0);
+        game.nextEnemyShotAt = now + (firstRun ? 1500 : 900);
+        say(firstRun ? 'FORWARD DRIVE ONLINE' : 'FORWARD DRIVE CONTINUES', 'HOSTILES STREAMING / 30 KILLS TO OMEGA');
+        game.nextAt = Infinity;
       }
     }
 
-    function beginEncounter(now) {
-      const waveCount = game.wavePlan[game.waveIndex];
-      if (!waveCount) return beginBossWarning(now);
-      game.enemies = Array.from({ length: waveCount }, (_, index) => ({
+    function spawnStreamEnemy(now) {
+      if (game.phase !== 'squad' || game.kills >= KILL_GOAL) return false;
+      const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
+      if (alive >= MAX_ACTIVE_ENEMIES) return false;
+      const slot = game.enemies.findIndex(enemy => enemy.hp <= 0);
+      const enemy = {
         hp: 18,
         maxHp: 18,
-        phase: index * 1.7 + game.waveIndex * 0.8
-      }));
-      game.activeEnemy = 0;
-      game.shooterCursor = 0;
-      setState('encounter', now);
+        phase: game.spawnSerial * 1.37 + 0.8,
+        serial: game.spawnSerial++,
+        born: now
+      };
+      if (slot >= 0) game.enemies[slot] = enemy;
+      else game.enemies.push(enemy);
+      game.activeEnemy = slot >= 0 ? slot : game.enemies.length - 1;
       updateHud();
-      say(`HOSTILE WAVE ${game.waveIndex + 1} / ${waveCount} CONTACTS`, 'FORWARD DRIVE HALTED');
-      game.nextAt = now + 1050;
-      tone(310, 0.1, 0.025);
+      tone(300 + (game.spawnSerial % 4) * 35, 0.045, 0.012);
+      return true;
+    }
+
+    function maintainEnemyStream(now) {
+      if (game.phase !== 'squad' || game.state !== 'attack' || game.kills >= KILL_GOAL) return;
+      if (now < game.nextEnemySpawnAt) return;
+      const spawned = spawnStreamEnemy(now);
+      game.nextEnemySpawnAt = now + (spawned ? 720 + Math.random() * 380 : 280);
     }
 
     function beginRead(now = performance.now()) {
@@ -795,13 +858,10 @@
       const alive = game.enemies
         .map((enemy, index) => enemy.hp > 0 ? index : -1)
         .filter(index => index >= 0);
-      if (!alive.length) {
-        if (game.phase === 'squad') return beginBossWarning(now);
-        return finish(true);
-      }
+      if (!alive.length) return game.phase === 'boss' ? finish(true) : undefined;
       if (game.phase === 'boss') {
         game.activeEnemy = 0;
-        game.attackers = [0, 0];
+        game.attackers = [0];
       } else {
         const count = Math.min(2, alive.length);
         const start = game.shooterCursor % alive.length;
@@ -820,7 +880,7 @@
       setState('read', now);
       if (game.phase === 'boss') {
         game.bossPortIndex = Math.floor(Math.random() * 3);
-        say('OMEGA CORE / DUAL CHARGE', '両手で別々にCATCH');
+        say('OMEGA CORE / BARRAGE CHARGE', '連続飛来の2発を合体可能');
         game.nextAt = now + 780;
       } else {
         say(`CONTACT ${game.attackers.map(index => index + 1).join(' + ')} / CORE CHARGE`, '重なる2発の軌道を注視');
@@ -876,71 +936,92 @@
       });
     }
 
-    function beginAttack(now) {
-      const occupied = [];
+    function spawnEnemyShot(now) {
+      const alive = game.enemies
+        .map((enemy, index) => enemy.hp > 0 ? index : -1)
+        .filter(index => index >= 0);
+      if (!alive.length) return false;
+      const occupied = game.enemyShots
+        .filter(shot => !shot.resolved)
+        .map(shot => ({ x: shot.target.x / W, y: shot.target.y / H }));
+      let shooter = 0;
+      let port;
+      let color;
+      let flight;
+      let catchWindow;
+      let damage;
       if (game.phase === 'boss') {
         const pose = enemyPose(now, 0);
-        const ports = bossPorts(pose, now, 3);
-        const catchStartTravel = Math.pow((3600 - 2200) / 3600, 1.55);
-        game.enemyShots = [0, 1].map(index => {
-          const portIndex = (game.bossPortIndex + index) % ports.length;
-          const port = ports[portIndex];
-          const origin = { x: port.x / W, y: port.y / H };
-          const impact = chooseImpact(origin, occupied, catchStartTravel);
-          occupied.push(impact);
-          return {
-            from: port,
-            target: { x: impact.x * W, y: impact.y * H },
-            shooter: 0,
-            markerDelay: 0,
-            delay: index * 420,
-            flight: 3600,
-            catchWindow: 2200,
-            curve: 1.55,
-            damage: 20,
-            order: index + 1,
-            color: portIndex,
-            resolved: false,
-            captured: false,
-            capturedBy: null
-          };
-        });
+        const ports = bossPorts(pose, now, 5);
+        const portIndex = game.shotSerial % ports.length;
+        port = ports[portIndex];
+        color = portIndex;
+        flight = 3500;
+        catchWindow = 2100;
+        damage = 14;
       } else {
-        const catchStartTravel = Math.pow((3400 - 2000) / 3400, 1.55);
-        game.enemyShots = game.attackers.map((shooter, index) => {
-          const pose = enemyPose(now, shooter);
-          const offset = game.attackOffsets[index] || { x: index % 2 ? 90 : -90, y: 0 };
-          const port = {
-            x: pose.x + offset.x * pose.scale,
-            y: pose.y + offset.y * pose.scale
-          };
-          const origin = { x: port.x / W, y: port.y / H };
-          const impact = chooseImpact(origin, occupied, catchStartTravel);
-          occupied.push(impact);
-          return {
-            from: port,
-            target: { x: impact.x * W, y: impact.y * H },
-            shooter,
-            markerDelay: 0,
-            delay: index * 360,
-            flight: 3400,
-            catchWindow: 2000,
-            curve: 1.55,
-            damage: 20,
-            order: index + 1,
-            color: (shooter + index) % COLORS.length,
-            resolved: false,
-            captured: false,
-            capturedBy: null
-          };
-        });
+        shooter = alive[game.shooterCursor % alive.length];
+        game.shooterCursor = (game.shooterCursor + 1) % Math.max(1, alive.length);
+        const pose = enemyPose(now, shooter);
+        const angle = game.shotSerial * 2.17 + shooter;
+        port = {
+          x: pose.x + Math.cos(angle) * 82 * pose.scale,
+          y: pose.y + Math.sin(angle) * 54 * pose.scale
+        };
+        color = (shooter + game.shotSerial) % COLORS.length;
+        flight = 3300;
+        catchWindow = 1900;
+        damage = 10;
       }
+      const origin = { x: port.x / W, y: port.y / H };
+      const catchStartTravel = Math.pow((flight - catchWindow) / flight, 1.55);
+      const impact = chooseImpact(origin, occupied, catchStartTravel);
+      const order = ++game.shotSerial;
+      game.enemyShots.push({
+        from: port,
+        target: { x: impact.x * W, y: impact.y * H },
+        shooter,
+        born: now,
+        flight,
+        catchWindow,
+        curve: 1.55,
+        damage,
+        order,
+        color,
+        resolved: false,
+        captured: false,
+        capturedBy: null
+      });
+      game.activeEnemy = shooter;
+      game.attackers = [shooter, ...game.attackers.filter(index => index !== shooter)].slice(0, 3);
+      tone(365 + color * 24, 0.04, 0.012);
+      return true;
+    }
+
+    function updateEnemyFire(now) {
+      if (game.state !== 'attack' || !['squad', 'boss'].includes(game.phase)) return;
+      const maxIncoming = game.phase === 'boss' ? 8 : 6;
+      if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
+      if (!spawnEnemyShot(now)) {
+        game.nextEnemyShotAt = now + 180;
+        return;
+      }
+      const interval = game.phase === 'boss'
+        ? 500 + Math.random() * 180
+        : 760 + Math.random() * 260;
+      game.nextEnemyShotAt = now + interval;
+    }
+
+    function beginAttack(now) {
+      game.enemyShots = [];
       game.volleyCaptured = 0;
       game.volleyMissed = 0;
       game.exchangeClosing = false;
       setState('attack', now);
-      say(game.phase === 'boss' ? 'OMEGA DUAL PULSE INBOUND' : 'DUAL PULSE INBOUND', '左右の手で1発ずつCATCH');
-      game.nextAt = now + (game.phase === 'boss' ? 4090 : 3830);
+      game.nextEnemyShotAt = now;
+      say(game.phase === 'boss' ? 'OMEGA BARRAGE INBOUND' : 'PULSE STREAM INBOUND', '弾は連続飛来 / 2発を合体可能');
+      game.nextAt = Infinity;
+      updateEnemyFire(now);
       tone(380, 0.05);
     }
 
@@ -1017,6 +1098,7 @@
       }
       hand.lastStrikeAt = now;
       const held = hand.held;
+      const isFused = !!held.fused;
       let targetIndex = held.enemyIndex;
       if (!game.enemies[targetIndex] || game.enemies[targetIndex].hp <= 0) {
         targetIndex = game.enemies.findIndex(enemy => enemy.hp > 0);
@@ -1026,11 +1108,15 @@
       strikes.push(effect);
       tone(240, 0.04, 0.015);
       effect.ok = true;
-      const power = hand.shakePower;
-      const damage = Math.round(18 + power * 42);
+      const fusionHands = isFused
+        ? handStates().filter(item => item.held?.fusionId === held.fusionId)
+        : [hand];
+      const power = Math.max(...fusionHands.map(item => item.shakePower));
+      const damage = isFused ? Math.round(90 + power * 70) : Math.round(18 + power * 42);
       const pose = enemyPose(now, targetIndex);
+      const launchPoint = isFused ? fusionCenter() : { x: end.x * W, y: end.y * H };
       game.playerShots.push({
-        from: { x: end.x * W, y: end.y * H },
+        from: launchPoint,
         to: { x: pose.x, y: pose.y },
         targetIndex,
         born: now,
@@ -1039,15 +1125,20 @@
         damage,
         color: held.color,
         handId: hand.id,
+        fused: isFused,
         resolved: false
       });
-      hand.held = null;
-      hand.shakePower = 0;
-      resetAttackMotion(hand, now);
+      fusionHands.forEach(item => {
+        item.held = null;
+        item.shakePower = 0;
+        item.lastStrikeAt = now;
+        resetAttackMotion(item, now);
+      });
       game.stats.strikes += 1;
       game.stats.maxPower = Math.max(game.stats.maxPower, power);
-      say(`${hand.id.toUpperCase()} PULSE RETURNED / ${damage} DMG`, heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`);
-      tone(520 + power * 260, 0.09, 0.04);
+      say(isFused ? `FUSION PULSE RETURNED / ${damage} POWER` : `${hand.id.toUpperCase()} PULSE RETURNED / ${damage} DMG`,
+        isFused ? 'MULTI TARGET PENETRATION' : (heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`));
+      tone(isFused ? 860 : 520 + power * 260, isFused ? 0.18 : 0.09, isFused ? 0.055 : 0.04);
       return true;
     }
 
@@ -1088,8 +1179,43 @@
     function resolvePlayerShot(playerShot, now) {
       if (playerShot.resolved) return;
       playerShot.resolved = true;
-      const enemy = game.enemies[playerShot.targetIndex];
+      let enemy = game.enemies[playerShot.targetIndex];
       if (!enemy || enemy.hp <= 0) {
+        const replacement = game.enemies.findIndex(unit => unit.hp > 0);
+        if (replacement < 0) {
+          maybeFinishExchange(now);
+          return;
+        }
+        playerShot.targetIndex = replacement;
+        enemy = game.enemies[replacement];
+        const pose = enemyPose(now, replacement);
+        playerShot.to = { x: pose.x, y: pose.y };
+      }
+      if (playerShot.fused && game.phase === 'squad') {
+        const remainingKills = Math.max(0, KILL_GOAL - game.kills);
+        const victims = [
+          playerShot.targetIndex,
+          ...game.enemies
+            .map((unit, index) => unit.hp > 0 && index !== playerShot.targetIndex ? index : -1)
+            .filter(index => index >= 0)
+        ].slice(0, Math.min(3, remainingKills));
+        victims.forEach((index, order) => {
+          const unit = game.enemies[index];
+          if (!unit || unit.hp <= 0) return;
+          const pose = enemyPose(now, index);
+          unit.hp = 0;
+          game.kills += 1;
+          game.stats.damage += unit.maxHp;
+          destructionEffects.push({ x: pose.x, y: pose.y, born: now + order * 45, boss: false });
+          burst(pose.x, pose.y, 100);
+        });
+        game.hitUntil = now + 620;
+        game.targetHitUntil = now + 520;
+        game.nextEnemySpawnAt = Math.min(game.nextEnemySpawnAt, now + 420);
+        updateHud();
+        say(`FUSION PENETRATION / ${victims.length} UNITS DOWN`, `TOTAL ${Math.min(game.kills, KILL_GOAL)}/${KILL_GOAL}`);
+        tone(52, 0.34, 0.06);
+        setTimeout(() => tone(420, 0.24, 0.045), 90);
         maybeFinishExchange(now);
         return;
       }
@@ -1102,6 +1228,11 @@
       updateHud();
       tone(110, 0.13, 0.045);
       if (enemy.hp <= 0) {
+        if (!enemy.boss) {
+          game.kills = Math.min(KILL_GOAL, game.kills + 1);
+          game.nextEnemySpawnAt = Math.min(game.nextEnemySpawnAt, now + 420);
+          updateHud();
+        }
         destructionEffects.push({ x: target.x, y: target.y, born: now, boss: !!enemy.boss });
         burst(target.x, target.y, enemy.boss ? 220 : 140);
         game.hitUntil = now + (enemy.boss ? 700 : 360);
@@ -1109,7 +1240,7 @@
         setTimeout(() => tone(180, 0.18, 0.04), 70);
         setTimeout(() => tone(45, 0.32, 0.05), 140);
         const alive = game.enemies.filter(unit => unit.hp > 0).length;
-        say(enemy.boss ? 'OMEGA CORE HIT' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `${alive} HOSTILES REMAINING`);
+        say(enemy.boss ? 'OMEGA CORE HIT' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `TOTAL ${game.kills}/${KILL_GOAL} / ${alive} ACTIVE`);
       } else {
         burst(target.x, target.y, Math.round(26 + playerShot.power * 38));
         say(`${playerShot.handId.toUpperCase()} RETURN / ${playerShot.damage} DAMAGE`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `UNIT ${playerShot.targetIndex + 1} HP ${Math.round(enemy.hp)}`);
@@ -1126,34 +1257,19 @@
 
     function maybeFinishExchange(now) {
       if (game.playerHp <= 0) return finish(false);
-      if (game.enemyShots.some(shot => !shot.resolved) || game.playerShots.some(shot => !shot.resolved)) return;
-      if (heldHands().length) {
-        if (game.state !== 'counter') setState('counter', now);
-        game.nextAt = Infinity;
-        const labels = heldHands().map(hand => hand.id[0].toUpperCase()).join(' + ');
-        say(`${labels} HAND HOLDING`, '保持した手を大きく振ってRETURN');
+      if (game.phase === 'squad' && game.kills >= KILL_GOAL) {
+        if (game.playerShots.some(shot => !shot.resolved)) return;
+        beginBossWarning(now);
         return;
       }
-      if (game.exchangeClosing) return;
-      game.exchangeClosing = true;
-      const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
-      if (!alive) {
-        if (game.phase === 'boss') {
-          setState('win', now);
-          say('OMEGA CORE ELIMINATED', 'ALL HOSTILE SIGNALS OFFLINE');
-          game.nextAt = now + 1800;
-          return;
-        }
-        const completedWave = game.waveIndex + 1;
-        const finalWave = game.waveIndex >= game.wavePlan.length - 1;
-        if (!finalWave) game.waveIndex += 1;
-        beginAdvance(now, finalWave);
-        say(`WAVE ${completedWave} ELIMINATED`, finalWave ? 'BOSS SIGNAL AHEAD / FORWARD' : `NEXT WAVE ${game.waveIndex + 1} / FORWARD`);
-        return;
+      const boss = game.phase === 'boss' ? game.enemies[0] : null;
+      if (boss && boss.hp <= 0) {
+        game.enemyShots = [];
+        clearHandActions();
+        setState('win', now);
+        say('OMEGA CORE ELIMINATED', 'ALL HOSTILE SIGNALS OFFLINE');
+        game.nextAt = now + 1800;
       }
-      setState('recover', now);
-      say('PULSE EXCHANGE COMPLETE', `${alive} HOSTILES REMAINING`);
-      game.nextAt = now + (game.phase === 'boss' ? 620 : 650);
     }
 
     function beginBossWarning(now) {
@@ -1161,10 +1277,11 @@
       game.warningAnnounced = false;
       game.enemyShots = [];
       game.playerShots = [];
+      game.enemies = [];
       clearHandActions();
       setState('bossWarning', now);
       updateHud();
-      say('SQUAD ELIMINATED', 'UNKNOWN SIGNAL DETECTED...');
+      say('30 HOSTILES ELIMINATED', 'UNKNOWN SIGNAL DETECTED...');
       game.nextAt = now + 3000;
     }
 
@@ -1178,7 +1295,7 @@
       clearHandActions();
       updateHud();
       setState('bossIntro', now);
-      say('OMEGA CORE ONLINE', 'BOSS CLASS / HP 180 / DUAL RETURN PULSE');
+      say('OMEGA CORE ONLINE', 'BOSS CLASS / HP 180 / CONTINUOUS BARRAGE');
       game.nextAt = now + 1450;
       tone(48, 0.55, 0.06);
       setTimeout(() => tone(96, 0.35, 0.04), 130);
@@ -1224,18 +1341,17 @@
     function update(now) {
       const updateDelta = Math.max(0, Math.min(50, now - game.lastUpdateAt));
       game.lastUpdateAt = now;
-      if (game.state === 'advance') game.travel += updateDelta * 0.00135;
+      if (game.phase === 'squad' || game.phase === 'boss-warning') game.travel += updateDelta * 0.00135;
       updatePlayerShots(now);
       if (game.state === 'attack') {
+        maintainEnemyStream(now);
+        updateEnemyFire(now);
         tryHandBlock(now);
         resolveExpiredShots(now);
+        tryFuseHeldShots(now);
+        game.enemyShots = game.enemyShots.filter(shot => !shot.resolved);
       }
-      if (game.state === 'advance' && now >= game.nextAt) {
-        if (game.bossPending) beginBossWarning(now);
-        else beginEncounter(now);
-      }
-      else if (game.state === 'encounter' && now >= game.nextAt) beginRead(now);
-      else if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
+      if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'bossWarning' && !game.warningAnnounced && now - game.stateAt >= 650) {
         game.warningAnnounced = true;
         say('WARNING / MASSIVE SIGNAL', 'OMEGA CLASS APPROACHING');
@@ -1245,8 +1361,6 @@
       else if (game.state === 'bossWarning' && now >= game.nextAt) spawnBoss(now);
       else if (game.state === 'bossIntro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'read' && now >= game.nextAt) beginAttack(now);
-      else if (game.state === 'attack' && now >= game.nextAt) resolveAttack(now);
-      else if (game.state === 'recover' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'win' && game.nextAt && now >= game.nextAt && ui.result.hidden) {
         game.nextAt = 0;
         finish(true);
@@ -1326,6 +1440,7 @@
         return;
       }
 
+      tryFuseHeldShots(now);
       hands.forEach(hand => {
         if (hand.held) trackAttackMotion(hand, { x: hand.x, y: hand.y, t: now }, now, true);
       });
@@ -1470,7 +1585,7 @@
 
     function shotPosition(now, shot) {
       if (!shot) return null;
-      const elapsed = now - game.stateAt - shot.delay;
+      const elapsed = now - shot.born;
       if (elapsed < 0) return null;
       const progress = Math.max(0, Math.min(1, elapsed / shot.flight));
       const travel = Math.pow(progress, shot.curve || 2.35);
@@ -1497,7 +1612,7 @@
         if (enemyShot.resolved) continue;
         const shot = shotPosition(now, enemyShot);
         if (!shot) continue;
-        const remaining = enemyShot.delay + enemyShot.flight - (now - game.stateAt);
+        const remaining = enemyShot.flight - (now - enemyShot.born);
         if (enemyShot.catchWindow) {
           if (remaining < 0 || remaining > enemyShot.catchWindow) continue;
         } else if (shot.travel < 0.45) continue;
@@ -1538,9 +1653,8 @@
     }
 
     function resolveExpiredShots(now) {
-      const elapsed = now - game.stateAt;
       for (const enemyShot of game.enemyShots) {
-        if (enemyShot.resolved || elapsed < enemyShot.delay + enemyShot.flight) continue;
+        if (enemyShot.resolved || now - enemyShot.born < enemyShot.flight) continue;
         enemyShot.resolved = true;
         enemyShot.captured = false;
         game.volleyMissed += 1;
@@ -1577,10 +1691,8 @@
       const motionA = 0.00108 + (index % 4) * 0.00013;
       const motionB = 0.00164 + (index % 5) * 0.00011;
       const depth = (Math.sin(now * (0.00132 + (index % 3) * 0.00017) + enemy.phase) + 1) * 0.5;
-      const emergence = game.state === 'encounter'
-        ? Math.min(1, Math.max(0, (now - game.stateAt) / 850))
-        : 1;
-      const count = Math.max(1, game.enemies.length);
+      const emergence = Math.min(1, Math.max(0, (now - (enemy.born ?? game.stateAt)) / 620));
+      const count = game.phase === 'squad' ? MAX_ACTIVE_ENEMIES : Math.max(1, game.enemies.length);
       const columns = count <= 5 ? 3 : 4;
       const rows = Math.ceil(count / columns);
       const row = Math.floor(index / columns);
@@ -1596,7 +1708,7 @@
       const baseScale = count <= 5 ? 0.46 : count <= 8 ? 0.37 : 0.31;
       let pose = {
         x: W * (baseX + orbitX),
-        y: H * (baseY + orbitY - (1 - emergence) * 0.19),
+        y: H * (baseY + orbitY - (1 - emergence) * 0.12),
         scale: (baseScale + depth * (count <= 5 ? 0.13 : count <= 8 ? 0.105 : 0.085)) * (0.28 + emergence * 0.72)
       };
       if (game.state === 'returning' && game.returnTo && index === game.returnTarget) pose = { ...game.returnTo };
@@ -1913,7 +2025,7 @@
         if (game.phase === 'boss') {
           const pose = enemyPose(now, 0);
           const ports = bossPorts(pose, now, 3);
-          [0, 1].forEach(index => {
+          [0, 1, 2].forEach(index => {
             const portIndex = (game.bossPortIndex + index) % ports.length;
             const bossPort = ports[portIndex];
             pulseBall(bossPort.x, bossPort.y, (6 + progress * 12) * pose.scale, spin * 8 + index, portIndex);
@@ -1940,7 +2052,7 @@
           const shot = shotPosition(now, enemyShot);
           if (!shot) continue;
           drawIncomingShot(enemyShot, shot, now, false);
-          const remaining = enemyShot.delay + enemyShot.flight - elapsed;
+          const remaining = enemyShot.flight - (now - enemyShot.born);
           if (remaining >= 0 && remaining <= enemyShot.catchWindow) drawCatchMarker(shot, remaining, now, enemyShot.order);
         }
       }
@@ -1952,7 +2064,16 @@
         energyTrail(playerShot.from, playerShot.to, travel, playerShot.color);
         const x = playerShot.from.x + (playerShot.to.x - playerShot.from.x) * travel;
         const y = playerShot.from.y + (playerShot.to.y - playerShot.from.y) * travel;
-        const radius = (18 + playerShot.power * 14) * (1 - progress * 0.68);
+        const radius = (18 + playerShot.power * 14) * (playerShot.fused ? 1.9 : 1) * (1 - progress * 0.68);
+        if (playerShot.fused) {
+          energyTrail(playerShot.from, playerShot.to, Math.max(0, travel - 0.035), (playerShot.color + 2) % COLORS.length);
+          polygon(x, y, radius * 1.45, 8, now * 0.006, '#ffffff', 2, 0.78);
+          for (let pixel = 0; pixel < 12; pixel++) {
+            const angle = pixel / 12 * Math.PI * 2 + now * 0.008;
+            ctx.fillStyle = COLORS[pixel % COLORS.length];
+            ctx.fillRect(Math.round(x + Math.cos(angle) * radius * 1.25) - 3, Math.round(y + Math.sin(angle) * radius * 1.25) - 3, 6, 6);
+          }
+        }
         pulseBall(x, y, radius, spin * 14 + index, playerShot.color);
       });
     }
@@ -1984,6 +2105,32 @@
     }
 
     function drawCounter(now) {
+      const fusion = fusedHold();
+      if (fusion) {
+        const center = fusionCenter();
+        const left = { x: input.hands.Left.x * W, y: input.hands.Left.y * H };
+        const right = { x: input.hands.Right.x * W, y: input.hands.Right.y * H };
+        const power = Math.max(input.hands.Left.shakePower, input.hands.Right.shakePower);
+        fusion.lastPoint = center;
+        line(left, center, '#2de2e6', 3, 0.82);
+        line(right, center, '#ff2a6d', 3, 0.82);
+        for (let i = 0; i < 44; i++) {
+          const angle = i / 44 * Math.PI * 2 + now * 0.004;
+          const radius = 60 + Math.sin(now * 0.018 + i) * 8 + power * 18;
+          ctx.fillStyle = COLORS[i % COLORS.length];
+          ctx.fillRect(Math.round(center.x + Math.cos(angle) * radius) - 4, Math.round(center.y + Math.sin(angle) * radius) - 4, 8, 8);
+        }
+        pulseBall(center.x, center.y, 28 + power * 18, now * 0.018, fusion.color);
+        polygon(center.x, center.y, 48 + power * 16, 8, now * 0.003, '#ffffff', 2, 0.8);
+        ctx.fillStyle = '#fff';
+        ctx.font = '900 15px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`FUSION HOLD / POWER ${Math.round(power * 100)}% / SWING HARD`, center.x, center.y + 94);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        return;
+      }
       heldHands().forEach((hand, handIndex) => {
         const points = handPoints(hand.id);
         const center = points[9] || hand.held.lastPoint || hand.guardPoint || { x: W * (hand.id === 'Left' ? 0.35 : 0.65), y: H * 0.7 };
@@ -2220,16 +2367,18 @@
 
     stage.addEventListener('pointerup', event => {
       if (!input.pointerDown || !input.pointerStart) return;
-      const end = { ...eventPoint(event), t: performance.now() };
+      const now = performance.now();
+      const end = { ...eventPoint(event), t: now };
       const start = input.pointerStart;
       const hand = input.hands[input.pointerHand];
       hand.x = end.x;
       hand.y = end.y;
       input.pointerDown = false;
       input.pointerStart = null;
+      tryFuseHeldShots(now);
       const dx = end.x - start.x;
       const dy = end.y - start.y;
-      if (Math.hypot(dx,dy) >= 0.035) strike(direction(dx,dy), start, end, performance.now(), input.pointerHand);
+      if (Math.hypot(dx,dy) >= 0.035) strike(direction(dx,dy), start, end, now, input.pointerHand);
     });
 
     stage.addEventListener('pointercancel', () => {
