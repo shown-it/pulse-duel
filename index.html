@@ -1,0 +1,1709 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>PULSE//DUEL — Motion Energy Prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000207;
+      --panel: #050811;
+      --line: #202a3d;
+      --text: #e9f0ff;
+      --muted: #738097;
+      --cyan: #2de2e6;
+      --pink: #ff2a6d;
+      --yellow: #f9f871;
+      --lime: #72f1b8;
+      --violet: #9b5de5;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      color: var(--text);
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+
+    body {
+      min-height: 100svh;
+    }
+
+    button { font: inherit; }
+
+    .app {
+      width: 100vw;
+      height: 100svh;
+      display: grid;
+      grid-template-rows: 46px minmax(0, 1fr) 34px;
+    }
+
+    .topbar,
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .brand strong {
+      color: var(--cyan);
+      font-size: clamp(20px, 3.8vw, 36px);
+      letter-spacing: 0.04em;
+    }
+
+    .brand span { letter-spacing: 0.12em; }
+
+    .status {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .pill {
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      background: #02040a;
+      white-space: nowrap;
+    }
+
+    .pill.live { color: var(--lime); border-color: #275945; }
+
+    .stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      border-block: 1px solid #22304a;
+      background: var(--bg);
+      touch-action: none;
+      user-select: none;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    video {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .hud {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .left-hud,
+    .right-hud,
+    .target-hud,
+    .message-area {
+      position: absolute;
+    }
+
+    .left-hud {
+      top: 14px;
+      left: 16px;
+      display: grid;
+      gap: 5px;
+    }
+
+    .right-hud {
+      top: 14px;
+      right: 16px;
+      display: none;
+      justify-items: end;
+      gap: 6px;
+    }
+
+    .right-hud.show { display: grid; }
+
+    .target-hud {
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: grid;
+      justify-items: center;
+      gap: 8px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: clamp(9px, 1.4vw, 12px);
+      letter-spacing: 0.1em;
+    }
+
+    .target-name {
+      color: var(--pink);
+      font-size: clamp(11px, 1.8vw, 15px);
+      letter-spacing: 0.08em;
+    }
+
+    .health-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .health-track {
+      width: clamp(130px, 22vw, 280px);
+      height: 12px;
+      padding: 2px;
+      border: 1px solid #33415e;
+      background: #02040a;
+      overflow: hidden;
+    }
+
+    .health-fill {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: var(--lime);
+      transition: width 180ms ease-out;
+    }
+
+    .health-fill.enemy { background: var(--pink); }
+
+    .health-value {
+      min-width: 36px;
+      color: var(--lime);
+      font-size: clamp(11px, 1.6vw, 14px);
+      font-weight: 800;
+      text-align: right;
+    }
+
+    .target-hud .health-value { color: var(--pink); }
+
+    .squad-health {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .unit-health-track {
+      width: clamp(52px, 7vw, 86px);
+      height: 10px;
+      padding: 2px;
+      border: 1px solid #533044;
+      background: #02040a;
+      transition: opacity 180ms, transform 180ms;
+    }
+
+    .unit-health-track.off { opacity: 0.18; transform: scaleY(0.45); }
+
+    .sequence {
+      display: flex;
+      gap: 6px;
+    }
+
+    .sequence span {
+      width: clamp(30px, 4.6vw, 44px);
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border: 1px solid #33415e;
+      background: #02040a;
+      color: #66718a;
+      font-size: clamp(17px, 3vw, 28px);
+    }
+
+    .sequence span.on {
+      color: #000;
+      border-color: var(--yellow);
+      background: var(--yellow);
+    }
+
+    .message-area {
+      left: 50%;
+      bottom: clamp(26px, 6vw, 58px);
+      width: min(760px, 92%);
+      transform: translateX(-50%);
+      text-align: center;
+    }
+
+    .message {
+      color: #fff;
+      font-size: clamp(14px, 2.4vw, 22px);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+
+    .sub-message {
+      min-height: 1.3em;
+      margin-top: 7px;
+      color: #8490a8;
+      font-size: clamp(9px, 1.4vw, 12px);
+    }
+
+    .modal {
+      position: absolute;
+      z-index: 20;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: clamp(14px, 4vw, 42px);
+      background: rgba(0, 2, 7, 0.94);
+    }
+
+    .modal[hidden] { display: none; }
+
+    .card {
+      width: min(650px, 100%);
+      max-height: 100%;
+      overflow: auto;
+      padding: clamp(20px, 4vw, 40px);
+      border: 1px solid #283650;
+      background: #03060d;
+      text-align: center;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--cyan);
+      font-size: 11px;
+      letter-spacing: 0.18em;
+    }
+
+    .card h1,
+    .card h2 {
+      margin: 0;
+      color: #fff;
+      font-size: clamp(30px, 7vw, 66px);
+      letter-spacing: 0.04em;
+    }
+
+    .card h2 { font-size: clamp(24px, 5vw, 46px); }
+
+    .tagline {
+      margin: 10px 0 22px;
+      color: var(--pink);
+      font-size: clamp(13px, 2.2vw, 18px);
+      letter-spacing: 0.12em;
+    }
+
+    .lead {
+      max-width: 540px;
+      margin: 0 auto 24px;
+      color: #98a4ba;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: clamp(12px, 1.7vw, 15px);
+      line-height: 1.8;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 9px;
+    }
+
+    .button {
+      min-width: 170px;
+      min-height: 46px;
+      padding: 10px 18px;
+      border: 1px solid var(--cyan);
+      border-radius: 0;
+      background: var(--cyan);
+      color: #001014;
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+
+    .button.secondary {
+      border-color: #384660;
+      background: #070b14;
+      color: #9eabc0;
+    }
+
+    .button:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
+    .button:disabled { opacity: 0.5; cursor: wait; }
+
+    .note {
+      min-height: 1.4em;
+      margin: 14px 0 0;
+      color: var(--lime);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .privacy {
+      margin: 14px 0 0;
+      color: #566176;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .calibration {
+      width: 120px;
+      aspect-ratio: 1;
+      margin: 8px auto 20px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      font-size: 18px;
+    }
+
+    .footer kbd {
+      padding: 2px 5px;
+      border: 1px solid #2d3951;
+      background: #050811;
+      color: #9ba8bd;
+    }
+
+    .text-button {
+      border: 0;
+      background: none;
+      color: #69758b;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    @media (max-width: 680px) {
+      .app { grid-template-rows: 38px minmax(0, 1fr) 30px; }
+      .topbar, .footer { padding: 0 7px; }
+      .brand span, .status .pill:first-child { display: none; }
+      .footer { align-items: flex-start; }
+      .footer > span { max-width: 82%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <strong>PULSE//DUEL</strong>
+        <span>一閃の型 / P02</span>
+      </div>
+      <div class="status" aria-live="polite">
+        <span class="pill" id="fps">FPS --</span>
+        <span class="pill" id="mode">CAMERA OFF</span>
+        <span class="pill" id="hand">HAND --</span>
+      </div>
+    </header>
+
+    <main class="stage" id="stage">
+      <canvas id="canvas" width="960" height="540" aria-label="ボーントラッキング対戦画面"></canvas>
+      <video id="video" playsinline muted></video>
+
+      <div class="hud" aria-live="polite">
+        <div class="left-hud">
+          <span class="label" id="state">IDLE</span>
+          <span class="label">PLAYER SYNC</span>
+          <div class="health-row">
+            <div class="health-track" role="progressbar" aria-label="Player health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" id="playerHealthTrack">
+              <span class="health-fill" id="playerHealth"></span>
+            </div>
+            <span class="health-value" id="playerHp">100</span>
+          </div>
+        </div>
+
+        <div class="target-hud">
+          <span class="target-name">HOSTILE SQUAD / PULSE CORES</span>
+          <div class="health-row">
+            <div class="squad-health" id="squadHealth" aria-label="Enemy squad health">
+              <div class="unit-health-track"><span class="health-fill enemy" id="enemyHealth0"></span></div>
+              <div class="unit-health-track"><span class="health-fill enemy" id="enemyHealth1"></span></div>
+              <div class="unit-health-track"><span class="health-fill enemy" id="enemyHealth2"></span></div>
+            </div>
+            <span class="health-value" id="enemyHp">3 ACTIVE</span>
+          </div>
+        </div>
+
+        <div class="right-hud" id="sequenceHud">
+          <span class="label">FINAL_SEQUENCE</span>
+          <div class="sequence">
+            <span>↑</span><span>←</span><span>↓</span>
+          </div>
+        </div>
+
+        <div class="message-area">
+          <div class="message" id="message">SYSTEM STANDBY</div>
+          <div class="sub-message" id="subMessage">CAMERA LINK または MANUAL MODE を選択</div>
+        </div>
+      </div>
+
+      <section class="modal" id="startModal">
+        <div class="card">
+          <p class="eyebrow">MOTION DUEL PROTOTYPE</p>
+          <h1>PULSE//DUEL</h1>
+          <p class="tagline">READ. BLOCK. RETURN.</p>
+          <p class="lead">
+            エネルギー弾に手のスケルトンのどこかを重ねてブロック。<br>
+            小さなシェイクで威力を溜め、大きな一振りでUFO編隊へ撃ち返してください。
+          </p>
+          <div class="buttons">
+            <button class="button" id="cameraStart">CAMERA LINK</button>
+            <button class="button secondary" id="manualStart">MANUAL MODE</button>
+          </div>
+          <p class="note" id="startNote"></p>
+          <p class="privacy">
+            映像・座標はブラウザ内で処理し、保存・送信しません。<br>
+            手動操作：ポインターで手を動かしてブロック、ドラッグ／矢印キーでリターン。
+          </p>
+        </div>
+      </section>
+
+      <section class="modal" id="calibrationModal" hidden>
+        <div class="card">
+          <p class="eyebrow">CALIBRATION</p>
+          <div class="calibration">21 PTS</div>
+          <h2>OPEN PALM // HOLD</h2>
+          <p class="lead">開いた掌をカメラ中央で約1秒静止してください。</p>
+          <p class="note" id="calibrationNote">SEARCHING HAND...</p>
+          <div class="buttons">
+            <button class="button secondary" id="fallback">MANUAL MODE</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="modal" id="resultModal" hidden>
+        <div class="card">
+          <p class="eyebrow" id="resultCode">SEQUENCE COMPLETE</p>
+          <h2 id="resultTitle">TARGET DOWN</h2>
+          <p class="tagline" id="resultRank">CLEAN TRACE</p>
+          <p class="lead" id="resultText"></p>
+          <div class="buttons">
+            <button class="button" id="retry">RETRY</button>
+            <button class="button secondary" id="toTitle">DISCONNECT</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>HAND CONTACT / BLOCK　<kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> RETURN</span>
+      <button class="text-button" id="reset">R / RESET</button>
+    </footer>
+  </div>
+
+  <script type="module">
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const stage = document.getElementById('stage');
+    const video = document.getElementById('video');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const $ = id => document.getElementById(id);
+    const ui = {
+      fps: $('fps'), mode: $('mode'), hand: $('hand'), state: $('state'),
+      playerHealth: $('playerHealth'), playerHealthTrack: $('playerHealthTrack'), playerHp: $('playerHp'),
+      enemyHealths: [$('enemyHealth0'), $('enemyHealth1'), $('enemyHealth2')], enemyHp: $('enemyHp'),
+      sequenceHud: $('sequenceHud'),
+      sequence: [...document.querySelectorAll('.sequence span')], message: $('message'),
+      sub: $('subMessage'), start: $('startModal'), calibration: $('calibrationModal'),
+      calibrationNote: $('calibrationNote'), result: $('resultModal'), resultCode: $('resultCode'),
+      resultTitle: $('resultTitle'), resultRank: $('resultRank'), resultText: $('resultText'),
+      cameraStart: $('cameraStart'), manualStart: $('manualStart'), startNote: $('startNote'),
+      fallback: $('fallback'), retry: $('retry'), toTitle: $('toTitle'), reset: $('reset')
+    };
+
+    const COLORS = ['#2de2e6', '#ff2a6d', '#f9f871', '#72f1b8', '#9b5de5'];
+    const ARROW = { left: '←', right: '→', up: '↑', down: '↓' };
+    const FINAL = ['up', 'left', 'down'];
+    const HAND_BONES = [
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12],
+      [9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20],[0,17]
+    ];
+
+    const labels = {
+      idle: 'IDLE', intro: 'LINKED', read: 'CORE CHARGE',
+      attack: 'PULSE INCOMING', counter: 'RETURN WINDOW', returning: 'PULSE RETURN', recover: 'COOL DOWN',
+      finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', win: 'COMPLETE', lose: 'FAILED',
+      calibrate: 'CALIBRATION'
+    };
+
+    const game = {
+      state: 'idle', stateAt: performance.now(), nextAt: 0,
+      playerHp: 100, enemies: [], activeEnemy: 0, shooterCursor: 0, attackSide: 'left',
+      guardAt: -Infinity, guardPoint: null, enemyShots: [], shotOriginOffset: { x: -90, y: 0 },
+      returnFrom: null, returnTo: null, returnTarget: 0,
+      shakePower: 0, returnPower: 0, pendingDamage: 18,
+      finalIndex: 0, finalDeadline: 0, hitUntil: 0, hurtUntil: 0, targetHitUntil: 0,
+      stats: { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 }
+    };
+
+    const input = {
+      mode: 'manual', visible: false, open: false, previousOpen: false,
+      target: [], drawn: [], samples: [], lastStrikeAt: -Infinity,
+      x: 0.5, y: 0.62, pointerDown: false, pointerStart: null, calibrationSince: 0,
+      attackAnchor: null, lastMotion: null, lastMotionVector: null
+    };
+
+    let landmarker = null;
+    let stream = null;
+    let lastVideoTime = -1;
+    let lastInference = 0;
+    let audio = null;
+    const strikes = [];
+    const particles = [];
+    const destructionEffects = [];
+
+    function setState(state, now = performance.now()) {
+      game.state = state;
+      game.stateAt = now;
+      ui.state.textContent = labels[state] || state.toUpperCase();
+      ui.sequenceHud.classList.toggle('show', state === 'final' || state === 'finalIntro');
+    }
+
+    function say(message, sub = '') {
+      ui.message.textContent = message;
+      ui.sub.textContent = sub;
+    }
+
+    function updateHud() {
+      const playerHp = Math.max(0, Math.round(game.playerHp));
+      ui.playerHealth.style.width = `${playerHp}%`;
+      ui.playerHp.textContent = playerHp;
+      ui.playerHealthTrack.setAttribute('aria-valuenow', playerHp);
+      const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
+      ui.enemyHp.textContent = `${alive} ACTIVE`;
+      ui.enemyHealths.forEach((bar, index) => {
+        const enemy = game.enemies[index];
+        const ratio = enemy ? Math.max(0, enemy.hp / enemy.maxHp) : 0;
+        bar.style.width = `${ratio * 100}%`;
+        bar.parentElement?.classList.toggle('off', ratio <= 0);
+      });
+      ui.sequence.forEach((step, index) => step.classList.toggle('on', index < game.finalIndex));
+    }
+
+    function tone(frequency, length = 0.08, volume = 0.025) {
+      if (!audio) return;
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.type = 'square';
+      osc.frequency.value = frequency;
+      gain.gain.setValueAtTime(volume, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + length);
+      osc.connect(gain).connect(audio.destination);
+      osc.start();
+      osc.stop(audio.currentTime + length);
+    }
+
+    function ensureAudio() {
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    }
+
+    function resetStats() {
+      game.stats = { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 };
+    }
+
+    function startBattle() {
+      const now = performance.now();
+      ui.start.hidden = true;
+      ui.calibration.hidden = true;
+      ui.result.hidden = true;
+      game.playerHp = 100;
+      game.enemies = [0, 1, 2].map(index => ({ hp: 24, maxHp: 24, phase: index * 2.1 }));
+      game.activeEnemy = 0;
+      game.shooterCursor = 0;
+      game.finalIndex = 0;
+      game.guardAt = -Infinity;
+      game.guardPoint = null;
+      game.enemyShots = [];
+      game.returnFrom = null;
+      game.returnTo = null;
+      game.returnTarget = 0;
+      game.shakePower = 0;
+      game.returnPower = 0;
+      game.pendingDamage = 18;
+      resetAttackMotion();
+      strikes.length = 0;
+      particles.length = 0;
+      destructionEffects.length = 0;
+      resetStats();
+      updateHud();
+      setState('intro', now);
+      say('CHANNEL LINKED', '3 UNIT PULSE SQUAD を捕捉');
+      game.nextAt = now + 1100;
+      tone(220, 0.12);
+    }
+
+    function beginRead(now = performance.now()) {
+      if (game.playerHp <= 0) return finish(false);
+      const alive = game.enemies
+        .map((enemy, index) => enemy.hp > 0 ? index : -1)
+        .filter(index => index >= 0);
+      if (!alive.length) return finish(true);
+      game.activeEnemy = alive[game.shooterCursor % alive.length];
+      game.shooterCursor += 1;
+      game.attackSide = Math.random() < 0.5 ? 'left' : 'right';
+      const side = game.attackSide === 'left' ? -1 : 1;
+      game.shotOriginOffset = {
+        x: side * (75 + Math.random() * 75),
+        y: -58 + Math.random() * 116
+      };
+      game.guardAt = -Infinity;
+      game.guardPoint = null;
+      setState('read', now);
+      say(`UNIT ${game.activeEnemy + 1} / ${game.attackSide.toUpperCase()} ARC`, '発射点と着弾点を追う');
+      game.nextAt = now + 980;
+    }
+
+    function beginAttack(now) {
+      const pose = enemyPose(now, game.activeEnemy);
+      const sign = game.attackSide === 'left' ? -1 : 1;
+      const port = {
+        x: pose.x + game.shotOriginOffset.x * pose.scale,
+        y: pose.y + game.shotOriginOffset.y * pose.scale
+      };
+      const hand = { x: input.visible ? input.x : 0.5, y: input.visible ? input.y : 0.62 };
+      const origin = { x: port.x / W, y: port.y / H };
+      let impact = { x: 0.2, y: 0.52 };
+      let impactFound = false;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        const candidate = { x: 0.08 + Math.random() * 0.84, y: 0.12 + Math.random() * 0.76 };
+        impact = candidate;
+        const collisionStart = {
+          x: origin.x + (candidate.x - origin.x) * 0.45,
+          y: origin.y + (candidate.y - origin.y) * 0.45
+        };
+        const handDistance = Math.hypot(candidate.x - hand.x, candidate.y - hand.y);
+        const pathDistance = pointSegmentDistance(hand, collisionStart, candidate);
+        if (handDistance >= 0.24 && pathDistance >= 0.12) {
+          impactFound = true;
+          break;
+        }
+      }
+      if (!impactFound) {
+        impact = {
+          x: hand.x < 0.5 ? 0.88 : 0.12,
+          y: hand.y < 0.5 ? 0.82 : 0.18
+        };
+      }
+      game.enemyShots = [{
+        from: port,
+        target: { x: impact.x * W, y: impact.y * H },
+        delay: 320,
+        flight: 1000,
+        color: sign < 0 ? 0 : 1
+      }];
+      setState('attack', now);
+      say('IMPACT LOCK', '四角い着弾枠へ手を動かす');
+      game.nextAt = now + 1370;
+      tone(380, 0.05);
+    }
+
+    function resolveAttack(now) {
+      const success = game.guardAt >= game.stateAt;
+      if (success) {
+        game.stats.guards += 1;
+        setState('counter', now);
+        game.shakePower = 0;
+        resetAttackMotion(now);
+        say('PULSE CAPTURED', '小さくシェイクでPOWER蓄積 ／ 大きく振ってRETURN');
+        game.nextAt = now + 2600;
+        tone(660, 0.08);
+      } else {
+        game.playerHp = Math.max(0, game.playerHp - 25);
+        game.hurtUntil = now + 420;
+        updateHud();
+        setState('recover', now);
+        say('25 DAMAGE', game.playerHp > 0 ? '姿勢を戻して再同期' : 'SESSION FAILED');
+        game.nextAt = now + 900;
+        tone(70, 0.18, 0.04);
+      }
+    }
+
+    function direction(dx, dy) {
+      if (Math.abs(dx) > Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+      return dy < 0 ? 'up' : 'down';
+    }
+
+    function resetAttackMotion(now = performance.now()) {
+      const point = { x: input.x, y: input.y, t: now };
+      input.attackAnchor = point;
+      input.lastMotion = point;
+      input.lastMotionVector = null;
+      input.samples.length = 0;
+    }
+
+    function trackAttackMotion(point, now, canLaunch = true) {
+      if (game.state !== 'counter') return;
+      if (!input.attackAnchor || !input.lastMotion) resetAttackMotion(now);
+      const current = { x: point.x, y: point.y, t: now };
+      const vx = current.x - input.lastMotion.x;
+      const vy = current.y - input.lastMotion.y;
+      const step = Math.hypot(vx, vy);
+      const launchDx = current.x - input.attackAnchor.x;
+      const launchDy = current.y - input.attackAnchor.y;
+      const shouldLaunch = canLaunch
+        && Math.hypot(launchDx, launchDy) >= 0.065
+        && now - input.attackAnchor.t >= 70;
+
+      if (step >= 0.006) {
+        const previous = input.lastMotionVector;
+        if (previous) {
+          const dot = (vx * previous.x + vy * previous.y) / Math.max(0.000001, step * previous.length);
+          if (dot < -0.3) {
+            const before = game.shakePower;
+            game.shakePower = Math.min(1, game.shakePower + 0.07 + Math.min(0.18, step * 2.8));
+            if (!shouldLaunch) input.attackAnchor = current;
+            if (game.shakePower > before) {
+              say('PULSE CHARGING', `SHAKE POWER ${Math.round(game.shakePower * 100)}% ／ 大きく振ってRETURN`);
+              tone(280 + game.shakePower * 240, 0.035, 0.012);
+            }
+          }
+        }
+        input.lastMotionVector = { x: vx, y: vy, length: step };
+        input.lastMotion = current;
+      }
+
+      if (!canLaunch || game.state !== 'counter') return;
+      if (shouldLaunch) {
+        strike(direction(launchDx, launchDy), input.attackAnchor, current, now);
+      }
+    }
+
+    function strike(dir, start, end, now = performance.now()) {
+      if (now - input.lastStrikeAt < 230) return;
+      input.lastStrikeAt = now;
+      const effect = { start, end, born: now, ok: false };
+      strikes.push(effect);
+      tone(240, 0.04, 0.015);
+
+      if (game.state === 'counter') {
+        effect.ok = true;
+        game.stats.strikes += 1;
+        game.returnPower = game.shakePower;
+        game.pendingDamage = Math.round(18 + game.returnPower * 42);
+        game.stats.maxPower = Math.max(game.stats.maxPower, game.returnPower);
+        const pose = enemyPose(now, game.activeEnemy);
+        game.returnTarget = game.activeEnemy;
+        game.returnFrom = { x: end.x * W, y: end.y * H };
+        game.returnTo = { x: pose.x, y: pose.y, scale: pose.scale };
+        setState('returning', now);
+        say(`PULSE RETURNED / ${game.pendingDamage} DMG`, `SHAKE POWER ${Math.round(game.returnPower * 100)}%`);
+        game.nextAt = now + 440;
+        tone(520 + game.returnPower * 260, 0.09, 0.04);
+        return;
+      }
+
+      if (game.state === 'final') {
+        const expected = FINAL[game.finalIndex];
+        if (dir === expected) {
+          effect.ok = true;
+          game.finalIndex += 1;
+          updateHud();
+          burst(end.x * W, end.y * H, 12);
+          tone(300 + game.finalIndex * 120, 0.08);
+          if (game.finalIndex >= FINAL.length) finishFinal(now);
+          else say(`SEQUENCE ${game.finalIndex}/3`, `NEXT ${ARROW[FINAL[game.finalIndex]]}`);
+        } else {
+          game.stats.wrong += 1;
+          game.finalIndex = 0;
+          updateHud();
+          say('SEQUENCE RESET', '↑ ← ↓');
+          tone(75, 0.1);
+        }
+        return;
+      }
+
+      if (['read', 'attack'].includes(game.state)) say('SHOT BLOCKED', 'まずPULSEを手でブロックする');
+    }
+
+    function resolveReturn(now) {
+      const enemy = game.enemies[game.returnTarget];
+      if (!enemy) return;
+      enemy.hp = Math.max(0, enemy.hp - game.pendingDamage);
+      game.stats.damage += game.pendingDamage;
+      game.hitUntil = now + 150;
+      game.targetHitUntil = now + 380;
+      const target = game.returnTo || enemyPose(now, game.returnTarget);
+      updateHud();
+      tone(110, 0.13, 0.045);
+      if (enemy.hp <= 0) {
+        destructionEffects.push({ x: target.x, y: target.y, born: now });
+        burst(target.x, target.y, 140);
+        game.hitUntil = now + 360;
+        tone(90, 0.22, 0.055);
+        setTimeout(() => tone(180, 0.18, 0.04), 70);
+        setTimeout(() => tone(45, 0.32, 0.05), 140);
+        const alive = game.enemies.filter(unit => unit.hp > 0).length;
+        if (!alive) {
+          setState('win', now);
+          say('SQUAD ELIMINATED', 'ALL PULSE CORES OFFLINE');
+          game.nextAt = now + 1300;
+        } else {
+          setState('recover', now);
+          say(`UNIT ${game.returnTarget + 1} DESTROYED`, `${alive} HOSTILES REMAINING`);
+          game.nextAt = now + 950;
+        }
+      } else {
+        burst(target.x, target.y, Math.round(26 + game.returnPower * 38));
+        setState('recover', now);
+        say(`${game.pendingDamage} DAMAGE`, `UNIT ${game.returnTarget + 1} HP ${Math.round(enemy.hp)}`);
+        game.nextAt = now + 760;
+      }
+    }
+
+    function beginFinal(now) {
+      setState('final', now);
+      game.finalIndex = 0;
+      game.finalDeadline = now + 5600;
+      updateHud();
+      say('FINAL_SEQUENCE', '↑ ← ↓');
+      tone(260, 0.14);
+    }
+
+    function finishFinal(now) {
+      setState('win', now);
+      game.hitUntil = now + 420;
+      game.targetHitUntil = now + 1000;
+      burst(W * 0.56, H * 0.43, 64);
+      say('SEQUENCE COMPLETE', 'PULSE CORE OFFLINE');
+      game.nextAt = now + 1200;
+      tone(180, 0.22, 0.05);
+      setTimeout(() => tone(360, 0.28, 0.035), 90);
+    }
+
+    function finish(won) {
+      setState(won ? 'win' : 'lose');
+      ui.result.hidden = false;
+      if (won) {
+        const clean = game.stats.wrong === 0 && game.stats.early === 0;
+        ui.resultCode.textContent = 'SQUAD ELIMINATED';
+        ui.resultTitle.textContent = 'SQUAD DOWN';
+        ui.resultRank.textContent = clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED';
+        ui.resultText.textContent = `DAMAGE ${game.stats.damage} / MAX POWER ${Math.round(game.stats.maxPower * 100)}% / ERROR ${game.stats.wrong + game.stats.early}`;
+      } else {
+        ui.resultCode.textContent = 'SESSION FAILED';
+        ui.resultTitle.textContent = 'SYNC LOST';
+        ui.resultRank.textContent = 'RECALIBRATION REQUIRED';
+        ui.resultText.textContent = `MISSED RETURN ${game.stats.early} / SEQUENCE ERROR ${game.stats.wrong}`;
+      }
+    }
+
+    function update(now) {
+      if (game.state === 'attack') tryHandBlock(now);
+      if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
+      else if (game.state === 'read' && now >= game.nextAt) beginAttack(now);
+      else if (game.state === 'attack' && now >= game.nextAt) resolveAttack(now);
+      else if (game.state === 'counter' && now >= game.nextAt) {
+        game.stats.early += 1;
+        setState('recover', now);
+        say('RETURN WINDOW CLOSED', '姿勢を戻して再同期');
+        game.nextAt = now + 650;
+      } else if (game.state === 'returning' && now >= game.nextAt) {
+        resolveReturn(now);
+      } else if (game.state === 'recover' && now >= game.nextAt) beginRead(now);
+      else if (game.state === 'win' && game.nextAt && now >= game.nextAt && ui.result.hidden) {
+        game.nextAt = 0;
+        finish(true);
+      }
+    }
+
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+    }
+
+    function openPalm(landmarks) {
+      const palm = landmarks[9];
+      const fingers = [[8,6], [12,10], [16,14], [20,18]];
+      let extended = 0;
+      for (const [tip, pip] of fingers) {
+        if (distance(landmarks[tip], palm) > distance(landmarks[pip], palm) * 1.42) extended += 1;
+      }
+      return extended >= 3;
+    }
+
+    function processLandmarks(result, now) {
+      const raw = result?.landmarks?.[0];
+      if (!raw) {
+        input.visible = false;
+        input.target = [];
+        input.samples.length = 0;
+        ui.hand.textContent = 'HAND --';
+        ui.hand.classList.remove('live');
+        if (game.state === 'calibrate') {
+          input.calibrationSince = 0;
+          ui.calibrationNote.textContent = 'SEARCHING HAND...';
+        }
+        return;
+      }
+
+      input.visible = true;
+      input.target = raw.map(point => ({ x: 1 - point.x, y: point.y, z: point.z }));
+      input.x = input.target[9].x;
+      input.y = input.target[9].y;
+      input.previousOpen = input.open;
+      input.open = openPalm(input.target);
+      ui.hand.textContent = input.open ? 'HAND OPEN' : 'HAND BLADE';
+      ui.hand.classList.add('live');
+
+      if (game.state === 'calibrate') {
+        if (input.open) {
+          if (!input.calibrationSince) input.calibrationSince = now;
+          const progress = Math.min(100, Math.round((now - input.calibrationSince) / 7));
+          ui.calibrationNote.textContent = `OPEN PALM ${progress}%`;
+          if (now - input.calibrationSince >= 700) startBattle();
+        } else {
+          input.calibrationSince = 0;
+          ui.calibrationNote.textContent = 'OPEN YOUR PALM';
+        }
+        return;
+      }
+
+      const motionPoint = { x: input.x, y: input.y, t: now };
+      if (game.state === 'counter') {
+        trackAttackMotion(motionPoint, now, true);
+        return;
+      }
+
+      if (game.state !== 'final') {
+        input.samples.length = 0;
+        return;
+      }
+
+      input.samples.push(motionPoint);
+      input.samples = input.samples.filter(sample => now - sample.t <= 420);
+      if (input.samples.length < 2 || now - input.lastStrikeAt < 260) return;
+      const start = input.samples[0];
+      const end = input.samples.at(-1);
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const elapsed = Math.max(1, end.t - start.t);
+      if (Math.hypot(dx, dy) >= 0.065 && Math.hypot(dx, dy) / elapsed >= 0.00022) {
+        strike(direction(dx, dy), start, end, now);
+        input.samples = [{ x: end.x, y: end.y, t: now }];
+      }
+    }
+
+    async function startCamera() {
+      ensureAudio();
+      ui.cameraStart.disabled = true;
+      ui.manualStart.disabled = true;
+      ui.startNote.textContent = 'LOADING LANDMARK MODEL...';
+      try {
+        const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/+esm');
+        const fileset = await vision.FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        );
+        const options = {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+            delegate: 'GPU'
+          },
+          runningMode: 'VIDEO',
+          numHands: 1,
+          minHandDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        };
+        try {
+          landmarker = await vision.HandLandmarker.createFromOptions(fileset, options);
+        } catch {
+          options.baseOptions.delegate = 'CPU';
+          landmarker = await vision.HandLandmarker.createFromOptions(fileset, options);
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: 'user' },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+        input.mode = 'camera';
+        ui.mode.textContent = 'CAMERA LIVE / 10HZ';
+        ui.mode.classList.add('live');
+        ui.start.hidden = true;
+        ui.calibration.hidden = false;
+        input.calibrationSince = 0;
+        setState('calibrate');
+      } catch (error) {
+        console.error(error);
+        ui.startNote.textContent = location.protocol === 'file:'
+          ? 'CAMERA REQUIRES LOCALHOST OR HTTPS. MANUAL MODE IS READY.'
+          : 'CAMERA LINK FAILED. MANUAL MODE IS READY.';
+        ui.cameraStart.disabled = false;
+        ui.manualStart.disabled = false;
+      }
+    }
+
+    function manualMode() {
+      ensureAudio();
+      input.mode = 'manual';
+      input.visible = true;
+      input.open = false;
+      input.target = [];
+      ui.mode.textContent = 'MANUAL MODE';
+      ui.mode.classList.add('live');
+      ui.hand.textContent = 'POINTER INPUT';
+      ui.hand.classList.add('live');
+      startBattle();
+    }
+
+    function smoothLandmarks() {
+      if (input.target.length !== 21) {
+        input.drawn = [];
+        return;
+      }
+      if (input.drawn.length !== 21) {
+        input.drawn = input.target.map(point => ({ ...point }));
+        return;
+      }
+      for (let i = 0; i < 21; i++) {
+        input.drawn[i].x += (input.target[i].x - input.drawn[i].x) * 0.38;
+        input.drawn[i].y += (input.target[i].y - input.drawn[i].y) * 0.38;
+        input.drawn[i].z += (input.target[i].z - input.drawn[i].z) * 0.38;
+      }
+    }
+
+    function manualHand() {
+      const x = input.x;
+      const y = input.y;
+      const open = false;
+      const points = Array.from({ length: 21 }, () => ({ x, y, z: 0 }));
+      points[0] = { x, y: y + 0.12, z: 0 };
+      const fingers = [
+        [1, -0.055, 0.035, -0.02, -0.032],
+        [5, -0.04, 0, -0.008, -0.048],
+        [9, 0, -0.01, 0, -0.052],
+        [13, 0.04, 0, 0.008, -0.048],
+        [17, 0.068, 0.02, 0.014, -0.041]
+      ];
+      for (const [base, ox, oy, dx, dy] of fingers) {
+        for (let i = 0; i < 4; i++) {
+          const step = open ? i : Math.min(i, 1.25);
+          points[base + i] = {
+            x: x + ox + dx * step,
+            y: y + oy + dy * step + (open ? 0 : Math.max(0, i - 1) * 0.018),
+            z: 0
+          };
+        }
+      }
+      return points;
+    }
+
+    function handPoints() {
+      if (!input.visible) return [];
+      const source = input.mode === 'camera' && input.drawn.length === 21 ? input.drawn : manualHand();
+      return source.map(point => ({ x: point.x * W, y: point.y * H }));
+    }
+
+    function shotPosition(now, shot) {
+      if (!shot) return null;
+      const elapsed = now - game.stateAt - shot.delay;
+      if (elapsed < 0) return null;
+      const progress = Math.max(0, Math.min(1, elapsed / shot.flight));
+      const travel = Math.pow(progress, 2.35);
+      return {
+        x: shot.from.x + (shot.target.x - shot.from.x) * travel,
+        y: shot.from.y + (shot.target.y - shot.from.y) * travel,
+        progress,
+        travel,
+        radius: 4 + Math.pow(progress, 1.7) * 38
+      };
+    }
+
+    function pointSegmentDistance(point, a, b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lengthSquared = dx * dx + dy * dy;
+      if (!lengthSquared) return Math.hypot(point.x - a.x, point.y - a.y);
+      const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared));
+      return Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t));
+    }
+
+    function tryHandBlock(now) {
+      if (game.guardAt >= game.stateAt) return;
+      const points = handPoints();
+      if (points.length !== 21) return;
+      let contact = null;
+      for (const enemyShot of game.enemyShots) {
+        const shot = shotPosition(now, enemyShot);
+        if (!shot) continue;
+        if (shot.travel < 0.45) continue;
+        const jointRadius = 16 + shot.radius * 0.58;
+        const boneRadius = 12 + shot.radius * 0.55;
+        const jointHit = points.some(point => Math.hypot(shot.x - point.x, shot.y - point.y) <= jointRadius);
+        const boneHit = HAND_BONES.some(([a, b]) => pointSegmentDistance(shot, points[a], points[b]) <= boneRadius);
+        if (jointHit || boneHit) {
+          contact = shot;
+          break;
+        }
+      }
+      if (!contact) return;
+      game.guardAt = now;
+      game.guardPoint = { x: contact.x, y: contact.y };
+      burst(contact.x, contact.y, 30);
+      say('SHOT CAPTURED', '反撃エネルギーへ変換');
+      tone(620, 0.08);
+    }
+
+    function enemyPose(now, index = game.activeEnemy) {
+      const enemy = game.enemies[index] || { phase: index * 2.1 };
+      const formation = [-0.22, 0, 0.22][index] || 0;
+      const depth = (Math.sin(now * 0.00108 + enemy.phase) + 1) * 0.5;
+      let pose = {
+        x: W * (0.5 + formation + Math.sin(now * 0.00072 + enemy.phase) * 0.06 + Math.sin(now * 0.00152 + enemy.phase) * 0.022),
+        y: H * (0.47 + Math.sin(now * 0.00092 + 1.4 + enemy.phase) * 0.052),
+        scale: 0.54 + depth * 0.28
+      };
+      if (game.state === 'returning' && game.returnTo && index === game.returnTarget) pose = { ...game.returnTo };
+      if (now < game.targetHitUntil && index === game.returnTarget) pose.x += Math.sin(now * 0.12) * 8;
+      return pose;
+    }
+
+    function line(a, b, color, width = 2, alpha = 1) {
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    function joint(point, color, size = 4) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawBackground(now) {
+      ctx.fillStyle = '#000207';
+      ctx.fillRect(0, 0, W, H);
+      const horizon = H * 0.56;
+      const columns = 12;
+      const rows = 7;
+      const mesh = [];
+
+      ctx.strokeStyle = '#0b2732';
+      ctx.lineWidth = 1;
+      for (let row = 0; row <= rows; row++) {
+        const depth = row / rows;
+        const spread = 40 + depth * W * 0.72;
+        const y = horizon + depth * depth * (H - horizon);
+        const points = [];
+        for (let column = -columns / 2; column <= columns / 2; column++) {
+          const wave = Math.sin(column * 1.45 + row * 0.72 + now * 0.00055) * 5 * depth;
+          points.push({ x: W * 0.5 + column / (columns / 2) * spread, y: y + wave });
+        }
+        mesh.push(points);
+        ctx.beginPath();
+        points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+        ctx.stroke();
+      }
+
+      for (let column = 0; column <= columns; column++) {
+        ctx.beginPath();
+        mesh.forEach((row, index) => index ? ctx.lineTo(row[column].x, row[column].y) : ctx.moveTo(row[column].x, row[column].y));
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = '#10283f';
+      for (let i = -5; i <= 5; i++) {
+        ctx.beginPath();
+        ctx.moveTo(W * 0.5, horizon);
+        ctx.lineTo(W * 0.5 + i * 150, 0);
+        ctx.stroke();
+      }
+
+      const scanDepth = (now * 0.00022) % 1;
+      const scanY = horizon + scanDepth * scanDepth * (H - horizon);
+      ctx.strokeStyle = '#2de2e6';
+      ctx.globalAlpha = 0.48;
+      ctx.beginPath();
+      ctx.moveTo(0, scanY);
+      ctx.lineTo(W, scanY);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = '#3b4963';
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.fillText('VECTOR_SCAN_SPACE / LANDMARK INPUT / MESH 13x8', 14, H - 14);
+    }
+
+    function polygon(cx, cy, radius, sides, rotation, color, width = 2, alpha = 1) {
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      for (let i = 0; i <= sides; i++) {
+        const angle = rotation + i / sides * Math.PI * 2;
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    function pulseBall(x, y, radius, phase, colorIndex = 0) {
+      const cell = 5;
+      const count = 12;
+      ctx.fillStyle = COLORS[colorIndex % COLORS.length];
+      ctx.fillRect(Math.round(x / cell) * cell - radius * 0.35, Math.round(y / cell) * cell - radius * 0.35, radius * 0.7, radius * 0.7);
+      for (let i = 0; i < count; i++) {
+        const angle = i / count * Math.PI * 2 + phase;
+        const distance = radius * (0.72 + (i % 2) * 0.2);
+        const px = Math.round((x + Math.cos(angle) * distance) / cell) * cell;
+        const py = Math.round((y + Math.sin(angle) * distance) / cell) * cell;
+        ctx.fillStyle = COLORS[(i + colorIndex) % COLORS.length];
+        ctx.fillRect(px - cell / 2, py - cell / 2, cell, cell);
+      }
+    }
+
+    function energyTrail(from, to, progress, colorIndex = 0) {
+      const count = 9;
+      for (let i = 0; i < count; i++) {
+        const t = Math.max(0, progress - i * 0.035);
+        const x = from.x + (to.x - from.x) * t;
+        const y = from.y + (to.y - from.y) * t;
+        const size = Math.max(3, 9 - i);
+        ctx.globalAlpha = 1 - i / count;
+        ctx.fillStyle = COLORS[(colorIndex + i) % COLORS.length];
+        ctx.fillRect(Math.round(x) - size / 2, Math.round(y) - size / 2, size, size);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawIncomingShot(enemyShot, shot, now) {
+      const color = COLORS[enemyShot.color % COLORS.length];
+      const markerHalf = 22;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.08 + shot.progress * 0.12;
+      for (const corner of [
+        { x: -markerHalf, y: -markerHalf }, { x: markerHalf, y: -markerHalf },
+        { x: -markerHalf, y: markerHalf }, { x: markerHalf, y: markerHalf }
+      ]) {
+        ctx.beginPath();
+        ctx.moveTo(enemyShot.from.x, enemyShot.from.y);
+        ctx.lineTo(enemyShot.target.x + corner.x, enemyShot.target.y + corner.y);
+        ctx.stroke();
+      }
+
+      for (let index = 7; index >= 1; index--) {
+        const pastProgress = Math.max(0, shot.progress - index * 0.055);
+        if (pastProgress <= 0) continue;
+        const travel = Math.pow(pastProgress, 2.35);
+        const x = enemyShot.from.x + (enemyShot.target.x - enemyShot.from.x) * travel;
+        const y = enemyShot.from.y + (enemyShot.target.y - enemyShot.from.y) * travel;
+        const radius = 4 + Math.pow(pastProgress, 1.7) * 38;
+        ctx.globalAlpha = (1 - index / 8) * 0.42;
+        ctx.strokeStyle = COLORS[(enemyShot.color + index) % COLORS.length];
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - radius * 0.62, y - radius * 0.62, radius * 1.24, radius * 1.24);
+      }
+      ctx.globalAlpha = 1;
+
+      if (shot.progress > 0.68) {
+        const rush = (shot.progress - 0.68) / 0.32;
+        const dx = shot.x - enemyShot.from.x;
+        const dy = shot.y - enemyShot.from.y;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const ux = dx / length;
+        const uy = dy / length;
+        const px = -uy;
+        const py = ux;
+        for (let index = -3; index <= 3; index++) {
+          const offset = index * 9 * rush;
+          const tail = 24 + rush * 74;
+          line(
+            { x: shot.x + px * offset - ux * tail, y: shot.y + py * offset - uy * tail },
+            { x: shot.x + px * offset - ux * 8, y: shot.y + py * offset - uy * 8 },
+            COLORS[(enemyShot.color + index + 5) % 5],
+            1,
+            0.18 + rush * 0.38
+          );
+        }
+      }
+
+      pulseBall(shot.x, shot.y, shot.radius, now * 0.016, enemyShot.color);
+    }
+
+    function drawUfoMesh(cx, cy, scale, spin) {
+      const rim = [];
+      const count = 10;
+      for (let i = 0; i < count; i++) {
+        const angle = spin + i / count * Math.PI * 2;
+        rim.push({
+          x: cx + Math.cos(angle) * 92 * scale,
+          y: cy + Math.sin(angle) * 28 * scale
+        });
+      }
+      const top = { x: cx, y: cy - 55 * scale };
+      const bottom = { x: cx, y: cy + 48 * scale };
+      for (let i = 0; i < count; i++) {
+        const next = rim[(i + 1) % count];
+        line(rim[i], next, '#2de2e6', 1, 0.48);
+        line(rim[i], i % 2 ? bottom : top, i % 2 ? '#9b5de5' : '#2de2e6', 1, 0.42);
+      }
+    }
+
+    function drawEnemy(now) {
+      const elapsed = now - game.stateAt;
+      const spin = now * 0.00045;
+      game.enemies.forEach((enemy, index) => {
+        if (enemy.hp <= 0) return;
+        const pose = enemyPose(now, index);
+        const active = index === game.activeEnemy;
+        const coreColor = active ? COLORS[2] : COLORS[(index + 1) % COLORS.length];
+        drawUfoMesh(pose.x, pose.y, pose.scale, spin * (0.7 + index * 0.12));
+        polygon(pose.x, pose.y, 66 * pose.scale, 6, spin + index, COLORS[index], active ? 2 : 1, active ? 0.78 : 0.42);
+        polygon(pose.x, pose.y, 49 * pose.scale, 4, -spin * 1.6 - index, COLORS[(index + 3) % 5], 1, 0.62);
+        polygon(pose.x, pose.y, 31 * pose.scale, 8, spin * 2.1, coreColor, 2, active ? 0.95 : 0.68);
+        joint({ x: pose.x, y: pose.y }, coreColor, 6 * pose.scale);
+        for (let arm = 0; arm < 4; arm++) {
+          const angle = spin + arm * Math.PI / 2 + index;
+          const a = { x: pose.x + Math.cos(angle) * 74 * pose.scale, y: pose.y + Math.sin(angle) * 74 * pose.scale };
+          const b = { x: pose.x + Math.cos(angle) * 88 * pose.scale, y: pose.y + Math.sin(angle) * 88 * pose.scale };
+          line(a, b, COLORS[(arm + index) % 5], 1, active ? 0.8 : 0.45);
+          joint(b, COLORS[(arm + index) % 5], 2.5 * pose.scale);
+        }
+        ctx.fillStyle = active ? '#f9f871' : '#ff2a6d';
+        ctx.font = '9px ui-monospace, monospace';
+        ctx.fillText(`UNIT_0${index + 1} / HP ${Math.ceil(enemy.hp)}`, pose.x + 58 * pose.scale, pose.y - 50 * pose.scale);
+      });
+
+      const effectIndex = game.state === 'returning' ? game.returnTarget : game.activeEnemy;
+      const effectEnemy = game.enemies[effectIndex];
+      if (!effectEnemy || effectEnemy.hp <= 0) return;
+      const pose = enemyPose(now, effectIndex);
+      const sign = game.attackSide === 'left' ? -1 : 1;
+      const port = {
+        x: pose.x + game.shotOriginOffset.x * pose.scale,
+        y: pose.y + game.shotOriginOffset.y * pose.scale
+      };
+      if (game.state === 'read') {
+        const progress = Math.min(1, elapsed / Math.max(1, game.nextAt - game.stateAt));
+        pulseBall(port.x, port.y, (8 + progress * 17) * pose.scale, spin * 8, sign < 0 ? 0 : 1);
+      } else if (game.state === 'attack' && game.guardAt < game.stateAt) {
+        for (const enemyShot of game.enemyShots) {
+          const marker = enemyShot.target;
+          const telegraph = Math.min(1, elapsed / Math.max(1, enemyShot.delay));
+          const markerSize = 58 - telegraph * 16 + Math.sin(now * 0.018) * 2;
+          ctx.strokeStyle = '#ff2a6d';
+          ctx.lineWidth = telegraph >= 1 ? 2 : 1;
+          ctx.globalAlpha = 0.55 + telegraph * 0.35;
+          ctx.strokeRect(marker.x - markerSize / 2, marker.y - markerSize / 2, markerSize, markerSize);
+          ctx.beginPath();
+          ctx.moveTo(marker.x - 8, marker.y);
+          ctx.lineTo(marker.x + 8, marker.y);
+          ctx.moveTo(marker.x, marker.y - 8);
+          ctx.lineTo(marker.x, marker.y + 8);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          const shot = shotPosition(now, enemyShot);
+          if (!shot) continue;
+          drawIncomingShot(enemyShot, shot, now);
+        }
+      } else if (game.state === 'returning' && game.returnFrom && game.returnTo) {
+        const progress = Math.min(1, elapsed / Math.max(1, game.nextAt - game.stateAt));
+        const travel = 1 - Math.pow(1 - progress, 1.8);
+        energyTrail(game.returnFrom, game.returnTo, travel, 2);
+        const x = game.returnFrom.x + (game.returnTo.x - game.returnFrom.x) * travel;
+        const y = game.returnFrom.y + (game.returnTo.y - game.returnFrom.y) * travel;
+        const radius = (18 + game.returnPower * 14) * (1 - progress * 0.68);
+        pulseBall(x, y, radius, spin * 14, 2);
+      }
+    }
+
+    function drawHand(now) {
+      if (!input.visible || game.state === 'idle') return;
+      const p = handPoints();
+      for (const [a,b] of HAND_BONES) {
+        const finger = b <= 4 ? 0 : b <= 8 ? 1 : b <= 12 ? 2 : b <= 16 ? 3 : 4;
+        line(p[a], p[b], COLORS[finger], 2, 0.95);
+      }
+      p.forEach((point, index) => {
+        const finger = index <= 4 ? 0 : index <= 8 ? 1 : index <= 12 ? 2 : index <= 16 ? 3 : 4;
+        joint(point, COLORS[finger], index === 0 ? 5 : 3);
+      });
+
+      if (game.state === 'attack' && game.guardAt >= game.stateAt) {
+        const center = game.guardPoint || p[9];
+        const radius = 38;
+        for (let i = 0; i < 20; i++) {
+          const angle = i / 20 * Math.PI * 2;
+          ctx.fillStyle = COLORS[i % 5];
+          ctx.fillRect(Math.round(center.x + Math.cos(angle) * radius) - 3, Math.round(center.y + Math.sin(angle) * radius) - 3, 6, 6);
+        }
+      }
+    }
+
+    function drawCounter(now) {
+      if (game.state !== 'counter') return;
+      const points = handPoints();
+      const center = points[9] || game.guardPoint || { x: W * 0.5, y: H * 0.76 };
+      const remaining = Math.max(0, (game.nextAt - now) / 2600);
+      const count = Math.ceil(28 * remaining);
+      const radius = 48 + game.shakePower * 18;
+      for (let i = 0; i < count; i++) {
+        const angle = i / 28 * Math.PI * 2;
+        ctx.fillStyle = COLORS[i % 5];
+        ctx.fillRect(Math.round(center.x + Math.cos(angle) * radius) - 3, Math.round(center.y + Math.sin(angle) * radius) - 3, 6, 6);
+      }
+      pulseBall(center.x, center.y, 13 + game.shakePower * 10, now * 0.012, 2);
+      const powerCells = 12;
+      for (let i = 0; i < powerCells; i++) {
+        ctx.fillStyle = i < Math.ceil(game.shakePower * powerCells) ? COLORS[(i + 2) % 5] : '#172136';
+        ctx.fillRect(Math.round(center.x - 54 + i * 9), Math.round(center.y + 58), 7, 5);
+      }
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 14px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`POWER ${Math.round(game.shakePower * 100)}% / SWIPE TO RETURN`, center.x, center.y + 80);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function burst(x, y, count) {
+      const now = performance.now();
+      for (let i = 0; i < count && particles.length < 220; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 50 + Math.random() * 180;
+        particles.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, born: now, life: 260 + Math.random()*280, color: COLORS[i%5] });
+      }
+    }
+
+    function drawEffects(now, dt) {
+      for (let i = destructionEffects.length - 1; i >= 0; i--) {
+        const effect = destructionEffects[i];
+        const age = now - effect.born;
+        if (age > 950) { destructionEffects.splice(i, 1); continue; }
+        const progress = age / 950;
+        const alpha = 1 - progress;
+        polygon(effect.x, effect.y, 24 + progress * 170, 8, now * 0.0018, COLORS[i % 5], 2, alpha);
+        polygon(effect.x, effect.y, 12 + progress * 118, 6, -now * 0.0024, COLORS[(i + 3) % 5], 2, alpha);
+        for (let ray = 0; ray < 32; ray++) {
+          const angle = ray / 32 * Math.PI * 2 + (ray % 3) * 0.16;
+          const distance = progress * (78 + (ray % 5) * 24);
+          const size = Math.max(3, 12 * alpha);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = COLORS[ray % COLORS.length];
+          ctx.fillRect(
+            Math.round(effect.x + Math.cos(angle) * distance - size / 2),
+            Math.round(effect.y + Math.sin(angle) * distance - size / 2),
+            size,
+            size
+          );
+        }
+        if (age < 140) {
+          ctx.globalAlpha = (1 - age / 140) * 0.28;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, W, H);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      for (let i = strikes.length - 1; i >= 0; i--) {
+        const effect = strikes[i];
+        const age = now - effect.born;
+        if (age > 360) { strikes.splice(i, 1); continue; }
+        const alpha = 1 - age / 360;
+        const sx = effect.start.x * W;
+        const sy = effect.start.y * H;
+        const ex = effect.end.x * W;
+        const ey = effect.end.y * H;
+        const steps = Math.max(4, Math.ceil(Math.hypot(ex-sx, ey-sy) / 10));
+        for (let n = 0; n <= steps; n++) {
+          const t = n / steps;
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = effect.ok ? COLORS[n % 5] : COLORS[0];
+          const size = 4 + Math.round(t * 5);
+          ctx.fillRect(Math.round(sx + (ex-sx)*t) - size/2, Math.round(sy + (ey-sy)*t) - size/2, size, size);
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        const age = now - p.born;
+        if (age >= p.life) { particles.splice(i, 1); continue; }
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 180 * dt;
+        ctx.globalAlpha = 1 - age / p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(Math.round(p.x), Math.round(p.y), 5, 5);
+      }
+      ctx.globalAlpha = 1;
+
+      if (now < game.hitUntil) {
+        ctx.globalAlpha = (game.hitUntil - now) / 150 * 0.18;
+        for (let y = 0; y < H; y += 24) {
+          for (let x = (y/24)%2*24; x < W; x += 48) {
+            ctx.fillStyle = COLORS[(x/24 + y/24) % 5 | 0];
+            ctx.fillRect(x, y, 24, 24);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    function drawDamageOverlay(now) {
+      if (now >= game.hurtUntil) return;
+      const intensity = (game.hurtUntil - now) / 420;
+      ctx.fillStyle = `rgba(255,20,54,${0.08 + intensity * 0.2})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 0.22 + intensity * 0.48;
+      ctx.fillStyle = '#ff1436';
+      for (let y = Math.floor((now * 0.24) % 28); y < H; y += 28) ctx.fillRect(0, y, W, 2);
+      for (let x = 0; x < W; x += 20) {
+        ctx.fillRect(x, 0, 10, 16);
+        ctx.fillRect(x, H - 16, 10, 16);
+      }
+      ctx.fillRect(0, 0, 18, 86);
+      ctx.fillRect(W - 18, 0, 18, 86);
+      ctx.fillRect(0, H - 86, 18, 86);
+      ctx.fillRect(W - 18, H - 86, 18, 86);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ff5570';
+      ctx.font = '800 16px ui-monospace, monospace';
+      ctx.fillText('WARNING / 25 DAMAGE', 22, H - 24);
+    }
+
+    let lastFrame = performance.now();
+    let fpsFrames = 0;
+    let fpsAt = lastFrame;
+    function frame(now) {
+      const dt = Math.min(0.04, (now - lastFrame) / 1000);
+      lastFrame = now;
+      fpsFrames += 1;
+      if (now - fpsAt >= 1000) {
+        ui.fps.textContent = `FPS ${Math.round(fpsFrames * 1000 / (now - fpsAt))}`;
+        fpsFrames = 0;
+        fpsAt = now;
+      }
+
+      if (landmarker && video.readyState >= 2 && now - lastInference >= 95 && video.currentTime !== lastVideoTime) {
+        lastInference = now;
+        lastVideoTime = video.currentTime;
+        try { processLandmarks(landmarker.detectForVideo(video, now), now); }
+        catch (error) { console.warn('Landmark frame skipped', error); }
+      }
+
+      smoothLandmarks();
+      update(now);
+      const hurt = Math.max(0, (game.hurtUntil - now) / 420);
+      if (hurt > 0) {
+        ctx.fillStyle = '#000207';
+        ctx.fillRect(0, 0, W, H);
+      }
+      ctx.save();
+      if (hurt > 0) {
+        const shakeX = (Math.sin(now * 0.31) + Math.sin(now * 0.73) * 0.55) * 10 * hurt;
+        const shakeY = (Math.cos(now * 0.37) + Math.sin(now * 0.61) * 0.45) * 7 * hurt;
+        ctx.translate(shakeX, shakeY);
+      }
+      drawBackground(now);
+      drawEnemy(now);
+      drawCounter(now);
+      drawHand(now);
+      drawEffects(now, dt);
+      ctx.restore();
+      drawDamageOverlay(now);
+      requestAnimationFrame(frame);
+    }
+
+    function eventPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+        y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+      };
+    }
+
+    stage.addEventListener('pointerdown', event => {
+      if (!['intro','read','attack','counter','recover','finalIntro','final'].includes(game.state)) return;
+      input.pointerDown = true;
+      input.pointerStart = eventPoint(event);
+      input.x = input.pointerStart.x;
+      input.y = input.pointerStart.y;
+      input.visible = true;
+      stage.setPointerCapture?.(event.pointerId);
+    });
+
+    stage.addEventListener('pointermove', event => {
+      if (!input.pointerDown) return;
+      const point = eventPoint(event);
+      input.x = point.x;
+      input.y = point.y;
+      trackAttackMotion(point, performance.now(), false);
+    });
+
+    stage.addEventListener('pointerup', event => {
+      if (!input.pointerDown || !input.pointerStart) return;
+      const end = eventPoint(event);
+      const start = input.pointerStart;
+      input.pointerDown = false;
+      input.pointerStart = null;
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      if (Math.hypot(dx,dy) >= 0.035) strike(direction(dx,dy), start, end);
+    });
+
+    stage.addEventListener('pointercancel', () => {
+      input.pointerDown = false;
+      input.pointerStart = null;
+    });
+
+    window.addEventListener('keydown', event => {
+      const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+      if (map[event.key]) {
+        event.preventDefault();
+        const d = map[event.key];
+        const v = { left:[-0.18,0], right:[0.18,0], up:[0,-0.18], down:[0,0.18] }[d];
+        strike(d, { x:0.5-v[0]/2, y:0.75-v[1]/2 }, { x:0.5+v[0]/2, y:0.75+v[1]/2 });
+      } else if (event.key.toLowerCase() === 'r') startBattle();
+      else if (event.key === 'Enter' && game.state === 'idle') manualMode();
+    });
+
+    ui.cameraStart.addEventListener('click', startCamera);
+    ui.manualStart.addEventListener('click', manualMode);
+    ui.fallback.addEventListener('click', manualMode);
+    ui.retry.addEventListener('click', startBattle);
+    ui.reset.addEventListener('click', startBattle);
+    ui.toTitle.addEventListener('click', () => {
+      ui.result.hidden = true;
+      ui.start.hidden = false;
+      setState('idle');
+      say('SYSTEM STANDBY', 'CAMERA LINK または MANUAL MODE を選択');
+    });
+
+    window.addEventListener('beforeunload', () => {
+      stream?.getTracks().forEach(track => track.stop());
+      landmarker?.close?.();
+    });
+
+    updateHud();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
