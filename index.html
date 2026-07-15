@@ -768,8 +768,8 @@
             from: port,
             target: { x: impact.x * W, y: impact.y * H },
             markerDelay: index * 400,
-            delay: index * 400 + 420,
-            flight: 920,
+            delay: index * 400 + 1000,
+            flight: 2000,
             damage: 8,
             order: index + 1,
             color: index,
@@ -801,7 +801,7 @@
       game.volleyMissed = 0;
       setState('attack', now);
       say(game.phase === 'boss' ? 'MULTI IMPACT LOCK / 5' : 'IMPACT LOCK', '四角い着弾枠へ手を動かす');
-      game.nextAt = now + (game.phase === 'boss' ? 3010 : 1370);
+      game.nextAt = now + (game.phase === 'boss' ? 4670 : 1370);
       tone(380, 0.05);
     }
 
@@ -1652,6 +1652,25 @@
             ctx.font = '900 20px ui-monospace, monospace';
             ctx.fillText(String(enemyShot.order), numberX + 7, numberY + 20);
           }
+          const secondsToImpact = Math.max(0, (enemyShot.delay + enemyShot.flight - elapsed) / 1000);
+          const countdownText = `${secondsToImpact.toFixed(1)}s`;
+          const countdownWidth = effectEnemy.boss ? 76 : 58;
+          const countdownHeight = effectEnemy.boss ? 38 : 30;
+          const countdownY = marker.y + (effectEnemy.boss ? 7 : 0);
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = '#000207';
+          ctx.fillRect(marker.x - countdownWidth / 2, countdownY - countdownHeight / 2, countdownWidth, countdownHeight);
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = effectEnemy.boss ? 2 : 1;
+          ctx.strokeRect(marker.x - countdownWidth / 2, countdownY - countdownHeight / 2, countdownWidth, countdownHeight);
+          ctx.fillStyle = effectEnemy.boss ? '#ffffff' : markerColor;
+          ctx.font = effectEnemy.boss ? '900 28px ui-monospace, monospace' : '900 20px ui-monospace, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(countdownText, marker.x, countdownY + 1);
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'alphabetic';
           ctx.globalAlpha = 1;
           const shot = shotPosition(now, enemyShot);
           if (!shot) continue;
