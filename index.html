@@ -502,7 +502,7 @@
           <p class="tagline">ADVANCE. CATCH. RETURN.</p>
           <p class="lead">
             画面に向けて両手を構え、奥から来る弾をキャッチ。<br>
-            両手の弾は接触で合体し、3体貫通の強力弾に。30秒後のボスを倒すと、弾数+1で次の周回へ進みます。
+            1周目は敵2機から開始。両手の弾は接触で合体し、ボスを倒すたびに敵と弾が増えます。
           </p>
           <p class="eyebrow">SELECT DIFFICULTY</p>
           <div class="difficulty-select" role="group" aria-label="難易度選択">
@@ -586,8 +586,8 @@
       [13,17],[17,18],[18,19],[19,20],[0,17]
     ];
     const HAND_IDS = ['Left', 'Right'];
-    const THROW_DISTANCE = 0.11;
-    const THROW_SPEED = 0.00025;
+    const THROW_DISTANCE = 0.09;
+    const THROW_SPEED = 0.0002;
     const RUN_DURATION = 30000;
     const MAX_ACTIVE_ENEMIES = 5;
     const FUSION_DISTANCE = 82;
@@ -750,6 +750,10 @@
       return difficultyProfile().maxIncoming + Math.max(0, game.loop - 1);
     }
 
+    function activeEnemyLimit() {
+      return Math.min(MAX_ACTIVE_ENEMIES, 1 + Math.max(1, game.loop));
+    }
+
     function loopFireScale() {
       return Math.max(0.42, Math.pow(0.82, Math.max(0, game.loop - 1)));
     }
@@ -793,7 +797,7 @@
         });
       } else if (game.phase === 'loop-transition') {
         ui.targetName.textContent = `LOOP SHIFT / NEXT ${game.loop}`;
-        ui.enemyHp.textContent = `MAX ${maxIncomingCount()} PULSES`;
+        ui.enemyHp.textContent = `${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} PULSES`;
         ui.enemyHealths.forEach(bar => {
           bar.parentElement.style.display = 'none';
         });
@@ -810,11 +814,11 @@
         const profile = difficultyProfile();
         if (game.state === 'idle') {
           ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
-          ui.enemyHp.textContent = `${profile.label} / LOOP 1 MAX ${profile.maxIncoming}`;
+          ui.enemyHp.textContent = `${profile.label} / 2 UNITS / MAX ${profile.maxIncoming}`;
         } else {
           const seconds = Math.max(0, Math.ceil((game.bossAt - performance.now()) / 1000));
           ui.targetName.textContent = `LOOP ${game.loop} / BOSS IN ${seconds}s`;
-          ui.enemyHp.textContent = `${alive} ACTIVE / MAX ${maxIncomingCount()} / ${profile.label}`;
+          ui.enemyHp.textContent = `${alive}/${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} / ${profile.label}`;
         }
         ui.enemyHealths.forEach((bar, index) => {
           const enemy = game.enemies[index];
@@ -922,7 +926,7 @@
         game.enemies = [];
         game.nextEnemySpawnAt = now + (firstRun ? 300 : 0);
         game.nextEnemyShotAt = now + (firstRun ? 1500 : 900);
-        say(firstRun ? `LOOP ${game.loop} / FORWARD DRIVE` : 'FORWARD DRIVE CONTINUES', `MAX ${maxIncomingCount()} PULSES / SURVIVE 30 SEC`);
+        say(firstRun ? `LOOP ${game.loop} / FORWARD DRIVE` : 'FORWARD DRIVE CONTINUES', `${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} PULSES`);
         game.nextAt = Infinity;
       }
     }
@@ -930,7 +934,7 @@
     function spawnStreamEnemy(now) {
       if (game.phase !== 'squad') return false;
       const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
-      if (alive >= MAX_ACTIVE_ENEMIES) return false;
+      if (alive >= activeEnemyLimit()) return false;
       const slot = game.enemies.findIndex(enemy => enemy.hp <= 0);
       const enemy = {
         hp: 18,
@@ -1378,7 +1382,7 @@
       clearHandActions();
       setState('loopTransition', now);
       updateHud();
-      say(`LOOP ${completedLoop} COMPLETE`, `LOOP ${game.loop} / MAX ${maxIncomingCount()} PULSES`);
+      say(`LOOP ${completedLoop} COMPLETE`, `LOOP ${game.loop} / ${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} PULSES`);
       game.nextAt = now + 2200;
       tone(120, 0.18, 0.05);
       setTimeout(() => tone(480, 0.22, 0.045), 120);
@@ -1392,7 +1396,7 @@
       game.warningAnnounced = false;
       game.lastUpdateAt = now;
       beginAdvance(now, false, true);
-      say(`LOOP ${game.loop} / FORWARD DRIVE`, `MAX ${maxIncomingCount()} PULSES / HP ${Math.ceil(game.playerHp)} CARRIED`);
+      say(`LOOP ${game.loop} / FORWARD DRIVE`, `${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} PULSES / HP ${Math.ceil(game.playerHp)}`);
       tone(260 + Math.min(360, game.loop * 35), 0.16, 0.04);
     }
 
@@ -1842,7 +1846,7 @@
       const motionB = 0.00164 + (index % 5) * 0.00011;
       const depth = (Math.sin(now * (0.00132 + (index % 3) * 0.00017) + enemy.phase) + 1) * 0.5;
       const emergence = Math.min(1, Math.max(0, (now - (enemy.born ?? game.stateAt)) / 620));
-      const count = game.phase === 'squad' ? MAX_ACTIVE_ENEMIES : Math.max(1, game.enemies.length);
+      const count = game.phase === 'squad' ? activeEnemyLimit() : Math.max(1, game.enemies.length);
       const columns = count <= 5 ? 3 : 4;
       const rows = Math.ceil(count / columns);
       const row = Math.floor(index / columns);
@@ -2453,7 +2457,7 @@
       ctx.fillText(`LOOP ${game.loop}`, W * 0.5, H * 0.47);
       ctx.fillStyle = '#72f1b8';
       ctx.font = '800 17px ui-monospace, monospace';
-      ctx.fillText(`INCOMING LIMIT +1 / MAX ${maxIncomingCount()}`, W * 0.5, H * 0.57);
+      ctx.fillText(`UNITS ${activeEnemyLimit()} / INCOMING MAX ${maxIncomingCount()}`, W * 0.5, H * 0.57);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
