@@ -424,7 +424,7 @@
     @media (max-width: 680px) {
       .app { grid-template-rows: 38px minmax(0, 1fr) 30px; }
       .topbar, .footer { padding: 0 7px; }
-      .brand span, .status .pill:first-child { display: none; }
+      .brand span, #fps { display: none; }
       .footer { align-items: flex-start; }
       .footer > span { max-width: 82%; }
     }
@@ -438,6 +438,7 @@
         <span>一閃の型 / P02</span>
       </div>
       <div class="status" aria-live="polite">
+        <span class="pill" id="score">SCORE 000000</span>
         <span class="pill" id="fps">FPS --</span>
         <span class="pill" id="mode">CAMERA OFF</span>
         <span class="pill" id="hand">HANDS --</span>
@@ -501,13 +502,13 @@
           <p class="tagline">ADVANCE. CATCH. RETURN.</p>
           <p class="lead">
             画面に向けて両手を構え、奥から来る弾をキャッチ。<br>
-            両手の弾は接触で合体し、3体貫通の強力弾に。30秒間走り抜けるとボスが出現します。
+            両手の弾は接触で合体し、3体貫通の強力弾に。30秒後のボスを倒すと、弾数+1で次の周回へ進みます。
           </p>
           <p class="eyebrow">SELECT DIFFICULTY</p>
           <div class="difficulty-select" role="group" aria-label="難易度選択">
-            <button class="difficulty-button" type="button" data-difficulty="easy" aria-pressed="false">EASY<span>MAX 2 PULSES</span></button>
-            <button class="difficulty-button selected" type="button" data-difficulty="normal" aria-pressed="true">NORMAL<span>MAX 3 PULSES</span></button>
-            <button class="difficulty-button" type="button" data-difficulty="hard" aria-pressed="false">HARD<span>MAX 4 PULSES</span></button>
+            <button class="difficulty-button" type="button" data-difficulty="easy" aria-pressed="false">EASY<span>LOOP 1 / MAX 2</span></button>
+            <button class="difficulty-button selected" type="button" data-difficulty="normal" aria-pressed="true">NORMAL<span>LOOP 1 / MAX 3</span></button>
+            <button class="difficulty-button" type="button" data-difficulty="hard" aria-pressed="false">HARD<span>LOOP 1 / MAX 4</span></button>
           </div>
           <div class="buttons">
             <button class="button" id="cameraStart">CAMERA START</button>
@@ -544,7 +545,7 @@
     </main>
 
     <footer class="footer">
-      <span>CAMERA + DUAL HANDS ONLY　DUAL HOLD → HANDS TOGETHER / FUSION　SWING HARD TO RETURN</span>
+      <span>CAMERA + DUAL HANDS ONLY　DUAL HOLD → HANDS TOGETHER / FUSION　EACH LOOP +1 PULSE</span>
     </footer>
   </div>
 
@@ -557,7 +558,7 @@
 
     const $ = id => document.getElementById(id);
     const ui = {
-      fps: $('fps'), mode: $('mode'), hand: $('hand'), state: $('state'),
+      fps: $('fps'), mode: $('mode'), hand: $('hand'), state: $('state'), score: $('score'),
       playerHealth: $('playerHealth'), playerHealthTrack: $('playerHealthTrack'), playerHp: $('playerHp'),
       enemyHealths: [
         $('enemyHealth0'), $('enemyHealth1'), $('enemyHealth2'), $('enemyHealth3'),
@@ -585,8 +586,8 @@
       [13,17],[17,18],[18,19],[19,20],[0,17]
     ];
     const HAND_IDS = ['Left', 'Right'];
-    const THROW_DISTANCE = 0.13;
-    const THROW_SPEED = 0.0003;
+    const THROW_DISTANCE = 0.11;
+    const THROW_SPEED = 0.00025;
     const RUN_DURATION = 30000;
     const MAX_ACTIVE_ENEMIES = 5;
     const FUSION_DISTANCE = 82;
@@ -609,12 +610,12 @@
       idle: 'IDLE', intro: 'LINKED', advance: 'FORWARD DRIVE', encounter: 'CONTACT', read: 'CORE CHARGE',
       attack: 'PULSE INCOMING', counter: 'RETURN WINDOW', returning: 'PULSE RETURN', recover: 'COOL DOWN',
       bossWarning: 'THREAT ALERT', bossIntro: 'OMEGA ONLINE',
-      finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', win: 'COMPLETE', lose: 'FAILED',
+      finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', loopTransition: 'LOOP SHIFT', win: 'COMPLETE', lose: 'FAILED',
       calibrate: 'CALIBRATION'
     };
 
     const game = {
-      state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad', difficulty: 'normal',
+      state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad', difficulty: 'normal', loop: 1,
       playerHp: 100, enemies: [], activeEnemy: 0, shooterCursor: 0, attackSide: 'left',
       guardAt: -Infinity, guardPoint: null, enemyShots: [], shotOriginOffset: { x: -90, y: 0 },
       returnFrom: null, returnTo: null, returnTarget: 0,
@@ -625,7 +626,7 @@
       travel: 0, lastUpdateAt: performance.now(), bossPending: false,
       kills: 0, runStartedAt: 0, bossAt: 0, lastTimerSecond: -1,
       spawnSerial: 0, nextEnemySpawnAt: 0, nextEnemyShotAt: 0, shotSerial: 0,
-      fusionSerial: 0, bossPortIndex: 0,
+      fusionSerial: 0, bossPortIndex: 0, score: 0,
       attackers: [], attackOffsets: [], playerShots: [], exchangeClosing: false,
       stats: { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 }
     };
@@ -745,6 +746,33 @@
       return DIFFICULTIES[game.difficulty] || DIFFICULTIES.normal;
     }
 
+    function maxIncomingCount() {
+      return difficultyProfile().maxIncoming + Math.max(0, game.loop - 1);
+    }
+
+    function loopFireScale() {
+      return Math.max(0.42, Math.pow(0.82, Math.max(0, game.loop - 1)));
+    }
+
+    function scoreFactor(loop = game.loop) {
+      const difficulty = { easy: 1, normal: 1.25, hard: 1.5 }[game.difficulty] || 1;
+      return difficulty * Math.max(1, loop);
+    }
+
+    function updateScore() {
+      ui.score.textContent = `SCORE ${String(Math.max(0, Math.round(game.score))).padStart(6, '0')}`;
+    }
+
+    function addScore(base, loop = game.loop) {
+      game.score += Math.round(base * scoreFactor(loop));
+      updateScore();
+    }
+
+    function subtractScore(base) {
+      game.score = Math.max(0, game.score - Math.round(base));
+      updateScore();
+    }
+
     function updateHud() {
       const playerHp = Math.max(0, Math.round(game.playerHp));
       ui.playerHealth.style.width = `${playerHp}%`;
@@ -754,14 +782,20 @@
         const boss = game.enemies[0];
         const profile = difficultyProfile();
         const ratio = boss ? Math.max(0, boss.hp / boss.maxHp) : 0;
-        ui.targetName.textContent = 'OMEGA CORE / BOSS CLASS';
-        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / ${profile.label}`;
+        ui.targetName.textContent = `OMEGA CORE / LOOP ${game.loop}`;
+        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / MAX ${maxIncomingCount()} / ${profile.label}`;
         ui.enemyHealths.forEach((bar, index) => {
           const segments = ui.enemyHealths.length;
           const segmentRatio = Math.max(0, Math.min(1, (ratio - index / segments) * segments));
           bar.parentElement.style.display = '';
           bar.style.width = `${segmentRatio * 100}%`;
           bar.parentElement?.classList.toggle('off', segmentRatio <= 0);
+        });
+      } else if (game.phase === 'loop-transition') {
+        ui.targetName.textContent = `LOOP SHIFT / NEXT ${game.loop}`;
+        ui.enemyHp.textContent = `MAX ${maxIncomingCount()} PULSES`;
+        ui.enemyHealths.forEach(bar => {
+          bar.parentElement.style.display = 'none';
         });
       } else if (game.phase === 'boss-warning') {
         ui.targetName.textContent = 'UNIDENTIFIED MASS / APPROACHING';
@@ -776,11 +810,11 @@
         const profile = difficultyProfile();
         if (game.state === 'idle') {
           ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
-          ui.enemyHp.textContent = `${profile.label} / MAX ${profile.maxIncoming}`;
+          ui.enemyHp.textContent = `${profile.label} / LOOP 1 MAX ${profile.maxIncoming}`;
         } else {
           const seconds = Math.max(0, Math.ceil((game.bossAt - performance.now()) / 1000));
-          ui.targetName.textContent = `HOSTILE STREAM / BOSS IN ${seconds}s`;
-          ui.enemyHp.textContent = `${alive} ACTIVE / ${game.kills} DOWN / ${profile.label}`;
+          ui.targetName.textContent = `LOOP ${game.loop} / BOSS IN ${seconds}s`;
+          ui.enemyHp.textContent = `${alive} ACTIVE / MAX ${maxIncomingCount()} / ${profile.label}`;
         }
         ui.enemyHealths.forEach((bar, index) => {
           const enemy = game.enemies[index];
@@ -822,6 +856,9 @@
       ui.result.hidden = true;
       ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
       game.phase = 'squad';
+      game.loop = 1;
+      game.score = 0;
+      updateScore();
       game.playerHp = 100;
       game.enemies = [];
       game.kills = 0;
@@ -885,7 +922,7 @@
         game.enemies = [];
         game.nextEnemySpawnAt = now + (firstRun ? 300 : 0);
         game.nextEnemyShotAt = now + (firstRun ? 1500 : 900);
-        say(firstRun ? 'FORWARD DRIVE ONLINE' : 'FORWARD DRIVE CONTINUES', 'SURVIVE 30 SEC TO OMEGA');
+        say(firstRun ? `LOOP ${game.loop} / FORWARD DRIVE` : 'FORWARD DRIVE CONTINUES', `MAX ${maxIncomingCount()} PULSES / SURVIVE 30 SEC`);
         game.nextAt = Infinity;
       }
     }
@@ -1066,14 +1103,15 @@
     function updateEnemyFire(now) {
       if (game.state !== 'attack' || !['squad', 'boss'].includes(game.phase)) return;
       const profile = difficultyProfile();
-      const maxIncoming = profile.maxIncoming;
+      const maxIncoming = maxIncomingCount();
       if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
       if (!spawnEnemyShot(now)) {
         game.nextEnemyShotAt = now + 180;
         return;
       }
       const [minimum, maximum] = game.phase === 'boss' ? profile.bossInterval : profile.squadInterval;
-      game.nextEnemyShotAt = now + minimum + Math.random() * (maximum - minimum);
+      const scale = loopFireScale();
+      game.nextEnemyShotAt = now + (minimum + Math.random() * (maximum - minimum)) * scale;
     }
 
     function beginAttack(now) {
@@ -1200,6 +1238,7 @@
       });
       game.stats.strikes += 1;
       game.stats.maxPower = Math.max(game.stats.maxPower, power);
+      addScore(isFused ? 120 : 50);
       say(isFused ? `FUSION PULSE RETURNED / ${damage} POWER` : `${hand.id.toUpperCase()} PULSE RETURNED / ${damage} DMG`,
         isFused ? 'MULTI TARGET PENETRATION' : (heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`));
       tone(isFused ? 860 : 520 + power * 260, isFused ? 0.18 : 0.09, isFused ? 0.055 : 0.04);
@@ -1269,6 +1308,7 @@
           unit.hp = 0;
           game.kills += 1;
           game.stats.damage += unit.maxHp;
+          addScore(600);
           destructionEffects.push({ x: pose.x, y: pose.y, born: now + order * 45, boss: false });
           burst(pose.x, pose.y, 100);
         });
@@ -1293,6 +1333,7 @@
       if (enemy.hp <= 0) {
         if (!enemy.boss) {
           game.kills += 1;
+          addScore(500);
           game.nextEnemySpawnAt = Math.min(game.nextEnemySpawnAt, now + 420);
           updateHud();
         }
@@ -1322,12 +1363,37 @@
       if (game.playerHp <= 0) return finish(false);
       const boss = game.phase === 'boss' ? game.enemies[0] : null;
       if (boss && boss.hp <= 0) {
-        game.enemyShots = [];
-        clearHandActions();
-        setState('win', now);
-        say('OMEGA CORE ELIMINATED', 'ALL HOSTILE SIGNALS OFFLINE');
-        game.nextAt = now + 1800;
+        beginLoopTransition(now);
       }
+    }
+
+    function beginLoopTransition(now) {
+      const completedLoop = game.loop;
+      addScore(4000, completedLoop);
+      game.loop += 1;
+      game.phase = 'loop-transition';
+      game.enemies = [];
+      game.enemyShots = [];
+      game.playerShots = [];
+      clearHandActions();
+      setState('loopTransition', now);
+      updateHud();
+      say(`LOOP ${completedLoop} COMPLETE`, `LOOP ${game.loop} / MAX ${maxIncomingCount()} PULSES`);
+      game.nextAt = now + 2200;
+      tone(120, 0.18, 0.05);
+      setTimeout(() => tone(480, 0.22, 0.045), 120);
+    }
+
+    function startNextLoop(now) {
+      game.phase = 'squad';
+      game.runStartedAt = now;
+      game.bossAt = now + RUN_DURATION;
+      game.lastTimerSecond = -1;
+      game.warningAnnounced = false;
+      game.lastUpdateAt = now;
+      beginAdvance(now, false, true);
+      say(`LOOP ${game.loop} / FORWARD DRIVE`, `MAX ${maxIncomingCount()} PULSES / HP ${Math.ceil(game.playerHp)} CARRIED`);
+      tone(260 + Math.min(360, game.loop * 35), 0.16, 0.04);
     }
 
     function beginBossWarning(now) {
@@ -1339,7 +1405,7 @@
       clearHandActions();
       setState('bossWarning', now);
       updateHud();
-      say('30 SECOND RUN COMPLETE', 'UNKNOWN SIGNAL DETECTED...');
+      say(`LOOP ${game.loop} / 30 SECOND RUN COMPLETE`, 'UNKNOWN SIGNAL DETECTED...');
       game.nextAt = now + 3000;
     }
 
@@ -1353,7 +1419,7 @@
       clearHandActions();
       updateHud();
       setState('bossIntro', now);
-      say('OMEGA CORE ONLINE', 'BOSS CLASS / HP 180 / CONTINUOUS BARRAGE');
+      say(`OMEGA CORE ONLINE / LOOP ${game.loop}`, `BOSS HP 180 / MAX ${maxIncomingCount()} PULSES`);
       game.nextAt = now + 1450;
       tone(48, 0.55, 0.06);
       setTimeout(() => tone(96, 0.35, 0.04), 130);
@@ -1390,13 +1456,13 @@
         const clean = game.stats.wrong === 0 && game.stats.early === 0;
         ui.resultCode.textContent = 'OMEGA ELIMINATED';
         ui.resultTitle.textContent = 'BOSS DOWN';
-        ui.resultRank.textContent = clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED';
-        ui.resultText.textContent = `${difficultyProfile().label} / DAMAGE ${game.stats.damage} / MAX POWER ${Math.round(game.stats.maxPower * 100)}% / ERROR ${game.stats.wrong + game.stats.early}`;
+        ui.resultRank.textContent = `SCORE ${Math.round(game.score).toLocaleString()}`;
+        ui.resultText.textContent = `${clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED'} / ${difficultyProfile().label} / LOOP ${game.loop}`;
       } else {
         ui.resultCode.textContent = 'SESSION FAILED';
         ui.resultTitle.textContent = 'SYNC LOST';
-        ui.resultRank.textContent = 'RECALIBRATION REQUIRED';
-        ui.resultText.textContent = `${difficultyProfile().label} / MISSED RETURN ${game.stats.early} / SEQUENCE ERROR ${game.stats.wrong}`;
+        ui.resultRank.textContent = `SCORE ${Math.round(game.score).toLocaleString()}`;
+        ui.resultText.textContent = `${difficultyProfile().label} / LOOP ${game.loop} / ${game.kills} DOWN / ${game.stats.guards} CATCH`;
       }
     }
 
@@ -1434,6 +1500,7 @@
       else if (game.state === 'bossWarning' && now >= game.nextAt) spawnBoss(now);
       else if (game.state === 'bossIntro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'read' && now >= game.nextAt) beginAttack(now);
+      else if (game.state === 'loopTransition' && now >= game.nextAt) startNextLoop(now);
       else if (game.state === 'win' && game.nextAt && now >= game.nextAt && ui.result.hidden) {
         game.nextAt = 0;
         finish(true);
@@ -1711,6 +1778,7 @@
           enemyShot.capturedBy = hand.id;
           game.volleyCaptured += 1;
           game.stats.guards += 1;
+          addScore(100);
           game.guardAt = now;
           game.guardPoint = { x: shot.x, y: shot.y };
           hand.held = {
@@ -1741,6 +1809,7 @@
         game.volleyMissed += 1;
         game.lastDamage = enemyShot.damage;
         game.playerHp = Math.max(0, game.playerHp - enemyShot.damage);
+        subtractScore(enemyShot.damage * 12);
         game.hurtUntil = now + (game.phase === 'boss' ? 260 : 420);
         updateHud();
         if (game.phase === 'boss') {
@@ -2364,6 +2433,31 @@
       ctx.textBaseline = 'alphabetic';
     }
 
+    function drawLoopTransition(now) {
+      if (game.state !== 'loopTransition') return;
+      const age = now - game.stateAt;
+      const progress = Math.min(1, age / 650);
+      const pulse = 0.5 + Math.sin(now * 0.018) * 0.5;
+      ctx.fillStyle = `rgba(45, 226, 230, ${0.04 + pulse * 0.04})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = '#2de2e6';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.35 + progress * 0.55;
+      const width = (220 + progress * 330) * (0.98 + pulse * 0.02);
+      ctx.strokeRect(W * 0.5 - width * 0.5, H * 0.5 - 92, width, 184);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 58px ui-monospace, monospace';
+      ctx.fillText(`LOOP ${game.loop}`, W * 0.5, H * 0.47);
+      ctx.fillStyle = '#72f1b8';
+      ctx.font = '800 17px ui-monospace, monospace';
+      ctx.fillText(`INCOMING LIMIT +1 / MAX ${maxIncomingCount()}`, W * 0.5, H * 0.57);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+    }
+
     let lastFrame = performance.now();
     let fpsFrames = 0;
     let fpsAt = lastFrame;
@@ -2404,6 +2498,7 @@
       drawCounter(now);
       drawEffects(now, dt);
       drawBossWarning(now);
+      drawLoopTransition(now);
       ctx.restore();
       drawDamageOverlay(now);
       requestAnimationFrame(frame);
@@ -2420,7 +2515,7 @@
         });
         const profile = difficultyProfile();
         updateHud();
-        say(`${profile.label} MODE SELECTED`, `MAX ${profile.maxIncoming} PULSES`);
+        say(`${profile.label} MODE SELECTED`, `LOOP 1 / MAX ${profile.maxIncoming} PULSES`);
       });
     });
     ui.toTitle.addEventListener('click', () => {
