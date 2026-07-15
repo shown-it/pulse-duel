@@ -425,7 +425,7 @@
         </div>
 
         <div class="target-hud">
-          <span class="target-name">HOSTILE SQUAD / PULSE CORES</span>
+          <span class="target-name" id="targetName">HOSTILE SQUAD / PULSE CORES</span>
           <div class="health-row">
             <div class="squad-health" id="squadHealth" aria-label="Enemy squad health">
               <div class="unit-health-track"><span class="health-fill enemy" id="enemyHealth0"></span></div>
@@ -516,6 +516,7 @@
       fps: $('fps'), mode: $('mode'), hand: $('hand'), state: $('state'),
       playerHealth: $('playerHealth'), playerHealthTrack: $('playerHealthTrack'), playerHp: $('playerHp'),
       enemyHealths: [$('enemyHealth0'), $('enemyHealth1'), $('enemyHealth2')], enemyHp: $('enemyHp'),
+      targetName: $('targetName'), squadHealth: $('squadHealth'),
       sequenceHud: $('sequenceHud'),
       sequence: [...document.querySelectorAll('.sequence span')], message: $('message'),
       sub: $('subMessage'), start: $('startModal'), calibration: $('calibrationModal'),
@@ -539,17 +540,19 @@
     const labels = {
       idle: 'IDLE', intro: 'LINKED', read: 'CORE CHARGE',
       attack: 'PULSE INCOMING', counter: 'RETURN WINDOW', returning: 'PULSE RETURN', recover: 'COOL DOWN',
+      bossWarning: 'THREAT ALERT', bossIntro: 'OMEGA ONLINE',
       finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', win: 'COMPLETE', lose: 'FAILED',
       calibrate: 'CALIBRATION'
     };
 
     const game = {
-      state: 'idle', stateAt: performance.now(), nextAt: 0,
+      state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad',
       playerHp: 100, enemies: [], activeEnemy: 0, shooterCursor: 0, attackSide: 'left',
       guardAt: -Infinity, guardPoint: null, enemyShots: [], shotOriginOffset: { x: -90, y: 0 },
       returnFrom: null, returnTo: null, returnTarget: 0,
       shakePower: 0, returnPower: 0, pendingDamage: 18,
       finalIndex: 0, finalDeadline: 0, hitUntil: 0, hurtUntil: 0, targetHitUntil: 0,
+      warningAnnounced: false, lastDamage: 25,
       stats: { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 }
     };
 
@@ -586,14 +589,34 @@
       ui.playerHealth.style.width = `${playerHp}%`;
       ui.playerHp.textContent = playerHp;
       ui.playerHealthTrack.setAttribute('aria-valuenow', playerHp);
-      const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
-      ui.enemyHp.textContent = `${alive} ACTIVE`;
-      ui.enemyHealths.forEach((bar, index) => {
-        const enemy = game.enemies[index];
-        const ratio = enemy ? Math.max(0, enemy.hp / enemy.maxHp) : 0;
-        bar.style.width = `${ratio * 100}%`;
-        bar.parentElement?.classList.toggle('off', ratio <= 0);
-      });
+      if (game.phase === 'boss') {
+        const boss = game.enemies[0];
+        const ratio = boss ? Math.max(0, boss.hp / boss.maxHp) : 0;
+        ui.targetName.textContent = 'OMEGA CORE / BOSS CLASS';
+        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)}`;
+        ui.enemyHealths.forEach((bar, index) => {
+          const segmentRatio = Math.max(0, Math.min(1, (ratio - index / 3) * 3));
+          bar.style.width = `${segmentRatio * 100}%`;
+          bar.parentElement?.classList.toggle('off', segmentRatio <= 0);
+        });
+      } else if (game.phase === 'boss-warning') {
+        ui.targetName.textContent = 'UNIDENTIFIED MASS / APPROACHING';
+        ui.enemyHp.textContent = 'WARNING';
+        ui.enemyHealths.forEach(bar => {
+          bar.style.width = '0%';
+          bar.parentElement?.classList.add('off');
+        });
+      } else {
+        const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
+        ui.targetName.textContent = 'HOSTILE SQUAD / PULSE CORES';
+        ui.enemyHp.textContent = `${alive} ACTIVE`;
+        ui.enemyHealths.forEach((bar, index) => {
+          const enemy = game.enemies[index];
+          const ratio = enemy ? Math.max(0, enemy.hp / enemy.maxHp) : 0;
+          bar.style.width = `${ratio * 100}%`;
+          bar.parentElement?.classList.toggle('off', ratio <= 0);
+        });
+      }
       ui.sequence.forEach((step, index) => step.classList.toggle('on', index < game.finalIndex));
     }
 
@@ -624,6 +647,7 @@
       ui.start.hidden = true;
       ui.calibration.hidden = true;
       ui.result.hidden = true;
+      game.phase = 'squad';
       game.playerHp = 100;
       game.enemies = [0, 1, 2].map(index => ({ hp: 24, maxHp: 24, phase: index * 2.1 }));
       game.activeEnemy = 0;
@@ -638,6 +662,8 @@
       game.shakePower = 0;
       game.returnPower = 0;
       game.pendingDamage = 18;
+      game.warningAnnounced = false;
+      game.lastDamage = 25;
       resetAttackMotion();
       strikes.length = 0;
       particles.length = 0;
@@ -655,8 +681,11 @@
       const alive = game.enemies
         .map((enemy, index) => enemy.hp > 0 ? index : -1)
         .filter(index => index >= 0);
-      if (!alive.length) return finish(true);
-      game.activeEnemy = alive[game.shooterCursor % alive.length];
+      if (!alive.length) {
+        if (game.phase === 'squad') return beginBossWarning(now);
+        return finish(true);
+      }
+      game.activeEnemy = game.phase === 'boss' ? 0 : alive[game.shooterCursor % alive.length];
       game.shooterCursor += 1;
       game.attackSide = Math.random() < 0.5 ? 'left' : 'right';
       const side = game.attackSide === 'left' ? -1 : 1;
@@ -667,22 +696,20 @@
       game.guardAt = -Infinity;
       game.guardPoint = null;
       setState('read', now);
-      say(`UNIT ${game.activeEnemy + 1} / ${game.attackSide.toUpperCase()} ARC`, '発射点と着弾点を追う');
-      game.nextAt = now + 980;
+      if (game.phase === 'boss') {
+        say('OMEGA CORE / MULTI CHARGE', '5つの着弾点を走査');
+        game.nextAt = now + 780;
+      } else {
+        say(`UNIT ${game.activeEnemy + 1} / ${game.attackSide.toUpperCase()} ARC`, '発射点と着弾点を追う');
+        game.nextAt = now + 980;
+      }
     }
 
-    function beginAttack(now) {
-      const pose = enemyPose(now, game.activeEnemy);
-      const sign = game.attackSide === 'left' ? -1 : 1;
-      const port = {
-        x: pose.x + game.shotOriginOffset.x * pose.scale,
-        y: pose.y + game.shotOriginOffset.y * pose.scale
-      };
+    function chooseImpact(origin, occupied = []) {
       const hand = { x: input.visible ? input.x : 0.5, y: input.visible ? input.y : 0.62 };
-      const origin = { x: port.x / W, y: port.y / H };
       let impact = { x: 0.2, y: 0.52 };
       let impactFound = false;
-      for (let attempt = 0; attempt < 16; attempt++) {
+      for (let attempt = 0; attempt < 28; attempt++) {
         const candidate = { x: 0.08 + Math.random() * 0.84, y: 0.12 + Math.random() * 0.76 };
         impact = candidate;
         const collisionStart = {
@@ -691,27 +718,75 @@
         };
         const handDistance = Math.hypot(candidate.x - hand.x, candidate.y - hand.y);
         const pathDistance = pointSegmentDistance(hand, collisionStart, candidate);
-        if (handDistance >= 0.24 && pathDistance >= 0.12) {
+        const otherDistance = occupied.length
+          ? Math.min(...occupied.map(point => Math.hypot(candidate.x - point.x, candidate.y - point.y)))
+          : 1;
+        if (handDistance >= 0.24 && pathDistance >= 0.12 && otherDistance >= 0.19) {
           impactFound = true;
           break;
         }
       }
       if (!impactFound) {
-        impact = {
-          x: hand.x < 0.5 ? 0.88 : 0.12,
-          y: hand.y < 0.5 ? 0.82 : 0.18
-        };
+        const anchors = [
+          { x: 0.1, y: 0.16 }, { x: 0.5, y: 0.14 }, { x: 0.9, y: 0.18 },
+          { x: 0.12, y: 0.5 }, { x: 0.88, y: 0.52 },
+          { x: 0.14, y: 0.84 }, { x: 0.5, y: 0.86 }, { x: 0.88, y: 0.82 }
+        ];
+        impact = anchors.reduce((best, candidate) => {
+          const distances = [Math.hypot(candidate.x - hand.x, candidate.y - hand.y)];
+          occupied.forEach(point => distances.push(Math.hypot(candidate.x - point.x, candidate.y - point.y)));
+          const score = Math.min(...distances);
+          return score > best.score ? { point: candidate, score } : best;
+        }, { point: anchors[0], score: -1 }).point;
       }
-      game.enemyShots = [{
-        from: port,
-        target: { x: impact.x * W, y: impact.y * H },
-        delay: 320,
-        flight: 1000,
-        color: sign < 0 ? 0 : 1
-      }];
+      return impact;
+    }
+
+    function bossPorts(pose, now, count = 5) {
+      return Array.from({ length: count }, (_, index) => {
+        const angle = now * 0.0008 + index / count * Math.PI * 2;
+        return {
+          x: pose.x + Math.cos(angle) * 128 * pose.scale,
+          y: pose.y + Math.sin(angle) * 42 * pose.scale
+        };
+      });
+    }
+
+    function beginAttack(now) {
+      const pose = enemyPose(now, game.activeEnemy);
+      const sign = game.attackSide === 'left' ? -1 : 1;
+      if (game.phase === 'boss') {
+        const occupied = [];
+        game.enemyShots = bossPorts(pose, now).map((port, index) => {
+          const origin = { x: port.x / W, y: port.y / H };
+          const impact = chooseImpact(origin, occupied);
+          occupied.push(impact);
+          return {
+            from: port,
+            target: { x: impact.x * W, y: impact.y * H },
+            delay: 220 + index * 125,
+            flight: 940 + index * 35,
+            color: index
+          };
+        });
+      } else {
+        const port = {
+          x: pose.x + game.shotOriginOffset.x * pose.scale,
+          y: pose.y + game.shotOriginOffset.y * pose.scale
+        };
+        const origin = { x: port.x / W, y: port.y / H };
+        const impact = chooseImpact(origin);
+        game.enemyShots = [{
+          from: port,
+          target: { x: impact.x * W, y: impact.y * H },
+          delay: 320,
+          flight: 1000,
+          color: sign < 0 ? 0 : 1
+        }];
+      }
       setState('attack', now);
-      say('IMPACT LOCK', '四角い着弾枠へ手を動かす');
-      game.nextAt = now + 1370;
+      say(game.phase === 'boss' ? 'MULTI IMPACT LOCK / 5' : 'IMPACT LOCK', '四角い着弾枠へ手を動かす');
+      game.nextAt = now + (game.phase === 'boss' ? 1820 : 1370);
       tone(380, 0.05);
     }
 
@@ -726,12 +801,13 @@
         game.nextAt = now + 2600;
         tone(660, 0.08);
       } else {
-        game.playerHp = Math.max(0, game.playerHp - 25);
+        game.lastDamage = game.phase === 'boss' ? 30 : 25;
+        game.playerHp = Math.max(0, game.playerHp - game.lastDamage);
         game.hurtUntil = now + 420;
         updateHud();
         setState('recover', now);
-        say('25 DAMAGE', game.playerHp > 0 ? '姿勢を戻して再同期' : 'SESSION FAILED');
-        game.nextAt = now + 900;
+        say(`${game.lastDamage} DAMAGE`, game.playerHp > 0 ? '姿勢を戻して再同期' : 'SESSION FAILED');
+        game.nextAt = now + (game.phase === 'boss' ? 620 : 900);
         tone(70, 0.18, 0.04);
       }
     }
@@ -844,17 +920,19 @@
       updateHud();
       tone(110, 0.13, 0.045);
       if (enemy.hp <= 0) {
-        destructionEffects.push({ x: target.x, y: target.y, born: now });
-        burst(target.x, target.y, 140);
-        game.hitUntil = now + 360;
+        destructionEffects.push({ x: target.x, y: target.y, born: now, boss: !!enemy.boss });
+        burst(target.x, target.y, enemy.boss ? 220 : 140);
+        game.hitUntil = now + (enemy.boss ? 700 : 360);
         tone(90, 0.22, 0.055);
         setTimeout(() => tone(180, 0.18, 0.04), 70);
         setTimeout(() => tone(45, 0.32, 0.05), 140);
         const alive = game.enemies.filter(unit => unit.hp > 0).length;
-        if (!alive) {
+        if (enemy.boss) {
           setState('win', now);
-          say('SQUAD ELIMINATED', 'ALL PULSE CORES OFFLINE');
-          game.nextAt = now + 1300;
+          say('OMEGA CORE ELIMINATED', 'ALL HOSTILE SIGNALS OFFLINE');
+          game.nextAt = now + 1800;
+        } else if (!alive) {
+          beginBossWarning(now);
         } else {
           setState('recover', now);
           say(`UNIT ${game.returnTarget + 1} DESTROYED`, `${alive} HOSTILES REMAINING`);
@@ -863,9 +941,33 @@
       } else {
         burst(target.x, target.y, Math.round(26 + game.returnPower * 38));
         setState('recover', now);
-        say(`${game.pendingDamage} DAMAGE`, `UNIT ${game.returnTarget + 1} HP ${Math.round(enemy.hp)}`);
-        game.nextAt = now + 760;
+        say(`${game.pendingDamage} DAMAGE`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `UNIT ${game.returnTarget + 1} HP ${Math.round(enemy.hp)}`);
+        game.nextAt = now + (enemy.boss ? 560 : 760);
       }
+    }
+
+    function beginBossWarning(now) {
+      game.phase = 'boss-warning';
+      game.warningAnnounced = false;
+      game.enemyShots = [];
+      setState('bossWarning', now);
+      updateHud();
+      say('SQUAD ELIMINATED', 'UNKNOWN SIGNAL DETECTED...');
+      game.nextAt = now + 3000;
+    }
+
+    function spawnBoss(now) {
+      game.phase = 'boss';
+      game.enemies = [{ hp: 180, maxHp: 180, phase: 0.8, boss: true }];
+      game.activeEnemy = 0;
+      game.shooterCursor = 0;
+      game.enemyShots = [];
+      updateHud();
+      setState('bossIntro', now);
+      say('OMEGA CORE ONLINE', 'BOSS CLASS / HP 180 / MULTI SHOT');
+      game.nextAt = now + 1450;
+      tone(48, 0.55, 0.06);
+      setTimeout(() => tone(96, 0.35, 0.04), 130);
     }
 
     function beginFinal(now) {
@@ -893,8 +995,8 @@
       ui.result.hidden = false;
       if (won) {
         const clean = game.stats.wrong === 0 && game.stats.early === 0;
-        ui.resultCode.textContent = 'SQUAD ELIMINATED';
-        ui.resultTitle.textContent = 'SQUAD DOWN';
+        ui.resultCode.textContent = 'OMEGA ELIMINATED';
+        ui.resultTitle.textContent = 'BOSS DOWN';
         ui.resultRank.textContent = clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED';
         ui.resultText.textContent = `DAMAGE ${game.stats.damage} / MAX POWER ${Math.round(game.stats.maxPower * 100)}% / ERROR ${game.stats.wrong + game.stats.early}`;
       } else {
@@ -908,6 +1010,14 @@
     function update(now) {
       if (game.state === 'attack') tryHandBlock(now);
       if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
+      else if (game.state === 'bossWarning' && !game.warningAnnounced && now - game.stateAt >= 650) {
+        game.warningAnnounced = true;
+        say('WARNING / MASSIVE SIGNAL', 'OMEGA CLASS APPROACHING');
+        tone(82, 0.22, 0.05);
+        setTimeout(() => tone(62, 0.28, 0.055), 160);
+      }
+      else if (game.state === 'bossWarning' && now >= game.nextAt) spawnBoss(now);
+      else if (game.state === 'bossIntro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'read' && now >= game.nextAt) beginAttack(now);
       else if (game.state === 'attack' && now >= game.nextAt) resolveAttack(now);
       else if (game.state === 'counter' && now >= game.nextAt) {
@@ -1162,6 +1272,20 @@
 
     function enemyPose(now, index = game.activeEnemy) {
       const enemy = game.enemies[index] || { phase: index * 2.1 };
+      if (enemy.boss) {
+        const emergence = game.state === 'bossIntro'
+          ? Math.min(1, Math.max(0, (now - game.stateAt) / 1200))
+          : 1;
+        const depth = (Math.sin(now * 0.00072 + enemy.phase) + 1) * 0.5;
+        let pose = {
+          x: W * (0.5 + Math.sin(now * 0.00043) * 0.055),
+          y: H * (0.45 + Math.sin(now * 0.00051 + 1.3) * 0.028 - (1 - emergence) * 0.3),
+          scale: (1.28 + depth * 0.22) * (0.42 + emergence * 0.58)
+        };
+        if (game.state === 'returning' && game.returnTo && index === game.returnTarget) pose = { ...game.returnTo };
+        if (now < game.targetHitUntil && index === game.returnTarget) pose.x += Math.sin(now * 0.12) * 11;
+        return pose;
+      }
       const formation = [-0.22, 0, 0.22][index] || 0;
       const depth = (Math.sin(now * 0.00108 + enemy.phase) + 1) * 0.5;
       let pose = {
@@ -1365,6 +1489,22 @@
       }
     }
 
+    function drawBossMesh(pose, spin, active) {
+      drawUfoMesh(pose.x, pose.y, pose.scale, spin * 0.72);
+      drawUfoMesh(pose.x, pose.y, pose.scale * 0.72, -spin * 1.18);
+      polygon(pose.x, pose.y, 118 * pose.scale, 10, spin, COLORS[1], active ? 3 : 2, 0.86);
+      polygon(pose.x, pose.y, 86 * pose.scale, 6, -spin * 1.5, COLORS[4], 2, 0.82);
+      polygon(pose.x, pose.y, 56 * pose.scale, 8, spin * 2.25, COLORS[2], 3, 0.96);
+      joint({ x: pose.x, y: pose.y }, '#ffffff', 10 * pose.scale);
+      for (let arm = 0; arm < 8; arm++) {
+        const angle = spin * 0.8 + arm * Math.PI / 4;
+        const a = { x: pose.x + Math.cos(angle) * 124 * pose.scale, y: pose.y + Math.sin(angle) * 55 * pose.scale };
+        const b = { x: pose.x + Math.cos(angle) * 154 * pose.scale, y: pose.y + Math.sin(angle) * 68 * pose.scale };
+        line(a, b, COLORS[arm % 5], 2, 0.82);
+        joint(b, COLORS[(arm + 2) % 5], 4 * pose.scale);
+      }
+    }
+
     function drawEnemy(now) {
       const elapsed = now - game.stateAt;
       const spin = now * 0.00045;
@@ -1372,6 +1512,13 @@
         if (enemy.hp <= 0) return;
         const pose = enemyPose(now, index);
         const active = index === game.activeEnemy;
+        if (enemy.boss) {
+          drawBossMesh(pose, spin, active);
+          ctx.fillStyle = '#ff5570';
+          ctx.font = '700 12px ui-monospace, monospace';
+          ctx.fillText(`BOSS_OMEGA / HP ${Math.ceil(enemy.hp)}`, pose.x + 104 * pose.scale, pose.y - 82 * pose.scale);
+          return;
+        }
         const coreColor = active ? COLORS[2] : COLORS[(index + 1) % COLORS.length];
         drawUfoMesh(pose.x, pose.y, pose.scale, spin * (0.7 + index * 0.12));
         polygon(pose.x, pose.y, 66 * pose.scale, 6, spin + index, COLORS[index], active ? 2 : 1, active ? 0.78 : 0.42);
@@ -1401,7 +1548,13 @@
       };
       if (game.state === 'read') {
         const progress = Math.min(1, elapsed / Math.max(1, game.nextAt - game.stateAt));
-        pulseBall(port.x, port.y, (8 + progress * 17) * pose.scale, spin * 8, sign < 0 ? 0 : 1);
+        if (effectEnemy.boss) {
+          bossPorts(pose, now).forEach((bossPort, index) => {
+            pulseBall(bossPort.x, bossPort.y, (6 + progress * 12) * pose.scale, spin * 8 + index, index);
+          });
+        } else {
+          pulseBall(port.x, port.y, (8 + progress * 17) * pose.scale, spin * 8, sign < 0 ? 0 : 1);
+        }
       } else if (game.state === 'attack' && game.guardAt < game.stateAt) {
         for (const enemyShot of game.enemyShots) {
           const marker = enemyShot.target;
@@ -1499,10 +1652,12 @@
         if (age > 950) { destructionEffects.splice(i, 1); continue; }
         const progress = age / 950;
         const alpha = 1 - progress;
-        polygon(effect.x, effect.y, 24 + progress * 170, 8, now * 0.0018, COLORS[i % 5], 2, alpha);
-        polygon(effect.x, effect.y, 12 + progress * 118, 6, -now * 0.0024, COLORS[(i + 3) % 5], 2, alpha);
-        for (let ray = 0; ray < 32; ray++) {
-          const angle = ray / 32 * Math.PI * 2 + (ray % 3) * 0.16;
+        const blastScale = effect.boss ? 1.7 : 1;
+        polygon(effect.x, effect.y, (24 + progress * 170) * blastScale, 8, now * 0.0018, COLORS[i % 5], effect.boss ? 4 : 2, alpha);
+        polygon(effect.x, effect.y, (12 + progress * 118) * blastScale, 6, -now * 0.0024, COLORS[(i + 3) % 5], effect.boss ? 3 : 2, alpha);
+        const rayCount = effect.boss ? 48 : 32;
+        for (let ray = 0; ray < rayCount; ray++) {
+          const angle = ray / rayCount * Math.PI * 2 + (ray % 3) * 0.16;
           const distance = progress * (78 + (ray % 5) * 24);
           const size = Math.max(3, 12 * alpha);
           ctx.globalAlpha = alpha;
@@ -1586,7 +1741,33 @@
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#ff5570';
       ctx.font = '800 16px ui-monospace, monospace';
-      ctx.fillText('WARNING / 25 DAMAGE', 22, H - 24);
+      ctx.fillText(`WARNING / ${game.lastDamage} DAMAGE`, 22, H - 24);
+    }
+
+    function drawBossWarning(now) {
+      if (game.state !== 'bossWarning') return;
+      const age = now - game.stateAt;
+      if (age < 650) return;
+      const pulse = 0.5 + Math.sin(now * 0.022) * 0.5;
+      ctx.fillStyle = `rgba(255, 10, 55, ${0.08 + pulse * 0.1})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = '#ff2a6d';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.55 + pulse * 0.4;
+      const inset = 20 + pulse * 12;
+      ctx.strokeRect(inset, inset, W - inset * 2, H - inset * 2);
+      for (let y = Math.round((now * 0.32) % 34); y < H; y += 34) ctx.fillRect(0, y, W, 2);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 52px ui-monospace, monospace';
+      ctx.fillText('WARNING', W * 0.5, H * 0.44);
+      ctx.fillStyle = '#ff5570';
+      ctx.font = '700 16px ui-monospace, monospace';
+      ctx.fillText('MASSIVE HOSTILE SIGNATURE / OMEGA CLASS', W * 0.5, H * 0.56);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
     }
 
     let lastFrame = performance.now();
@@ -1627,6 +1808,7 @@
       drawCounter(now);
       drawHand(now);
       drawEffects(now, dt);
+      drawBossWarning(now);
       ctx.restore();
       drawDamageOverlay(now);
       requestAnimationFrame(frame);
