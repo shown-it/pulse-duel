@@ -33,16 +33,20 @@
     }
 
     body {
-      min-height: 100svh;
+      min-height: 100vh;
+      min-height: 100dvh;
     }
 
     button { font: inherit; }
 
     .app {
       width: 100vw;
-      height: 100svh;
+      width: 100dvw;
+      height: 100vh;
+      height: 100dvh;
       display: grid;
       grid-template-rows: 46px minmax(0, 1fr) 34px;
+      grid-template-rows: clamp(34px, 6dvh, 46px) minmax(0, 1fr) clamp(26px, 4.5dvh, 34px);
     }
 
     .topbar,
@@ -392,6 +396,18 @@
       .footer { align-items: flex-start; }
       .footer > span { max-width: 82%; }
     }
+
+    @media (max-height: 560px) {
+      .app { grid-template-rows: 34px minmax(0, 1fr) 26px; }
+      .topbar, .footer { font-size: 9px; }
+      .brand strong { font-size: 18px; }
+      .left-hud, .target-hud { top: 8px; }
+      .message-area { bottom: 18px; }
+      .modal { padding: 8px; }
+      .card { padding: 16px; }
+      .tagline { margin-bottom: 12px; }
+      .lead { margin-bottom: 14px; line-height: 1.55; }
+    }
   </style>
 </head>
 <body>
@@ -399,7 +415,7 @@
     <header class="topbar">
       <div class="brand">
         <strong>PULSE//DUEL</strong>
-        <span>一閃の型 / P02</span>
+        <span>MOTION ENERGY / P02</span>
       </div>
       <div class="status" aria-live="polite">
         <span class="pill" id="score">SCORE 000000</span>
@@ -410,7 +426,7 @@
     </header>
 
     <main class="stage" id="stage">
-      <canvas id="canvas" width="960" height="540" aria-label="ボーントラッキング対戦画面"></canvas>
+      <canvas id="canvas" aria-label="ボーントラッキング対戦画面"></canvas>
       <video id="video" playsinline muted></video>
 
       <div class="hud" aria-live="polite">
@@ -509,9 +525,11 @@
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', { alpha: false });
     const video = document.getElementById('video');
-    const W = canvas.width;
-    const H = canvas.height;
-    const VANISH = Object.freeze({ x: W * 0.5, y: H * 0.46 });
+    const stage = document.getElementById('stage');
+    let W = 960;
+    let H = 540;
+    let viewScale = 1;
+    const VANISH = { x: W * 0.5, y: H * 0.46 };
 
     const $ = id => document.getElementById(id);
     const ui = {
@@ -606,6 +624,72 @@
     const strikes = [];
     const particles = [];
     const destructionEffects = [];
+
+    function resizePoint(point, scaleX, scaleY) {
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      point.x *= scaleX;
+      point.y *= scaleY;
+    }
+
+    function resizeGameCanvas() {
+      const rect = stage.getBoundingClientRect();
+      const cssWidth = Math.max(1, rect.width);
+      const cssHeight = Math.max(1, rect.height);
+      const nextViewScale = Math.max(0.35, Math.min(3, Math.min(cssWidth / 960, cssHeight / 540)));
+      const nextW = cssWidth / nextViewScale;
+      const nextH = cssHeight / nextViewScale;
+      const scaleX = nextW / W;
+      const scaleY = nextH / H;
+
+      if (Math.abs(scaleX - 1) > 0.001 || Math.abs(scaleY - 1) > 0.001) {
+        game.enemyShots.forEach(shot => {
+          resizePoint(shot.from, scaleX, scaleY);
+          resizePoint(shot.target, scaleX, scaleY);
+        });
+        game.playerShots.forEach(shot => {
+          resizePoint(shot.from, scaleX, scaleY);
+          resizePoint(shot.to, scaleX, scaleY);
+        });
+        [game.guardPoint, game.returnFrom, game.returnTo].forEach(point => resizePoint(point, scaleX, scaleY));
+        const scaledHolds = new Set();
+        handStates().forEach(hand => {
+          resizePoint(hand.guardPoint, scaleX, scaleY);
+          if (hand.held && !scaledHolds.has(hand.held)) {
+            resizePoint(hand.held.lastPoint, scaleX, scaleY);
+            scaledHolds.add(hand.held);
+          }
+        });
+        particles.forEach(particle => {
+          resizePoint(particle, scaleX, scaleY);
+          particle.vx *= scaleX;
+          particle.vy *= scaleY;
+        });
+        destructionEffects.forEach(effect => resizePoint(effect, scaleX, scaleY));
+      }
+
+      W = nextW;
+      H = nextH;
+      viewScale = nextViewScale;
+      VANISH.x = W * 0.5;
+      VANISH.y = H * 0.46;
+
+      const pixelBudgetRatio = Math.sqrt(2600000 / (cssWidth * cssHeight));
+      const renderRatio = Math.max(0.25, Math.min(window.devicePixelRatio || 1, 1.5, pixelBudgetRatio));
+      const backingWidth = Math.max(1, Math.round(cssWidth * renderRatio));
+      const backingHeight = Math.max(1, Math.round(cssHeight * renderRatio));
+      if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
+        canvas.width = backingWidth;
+        canvas.height = backingHeight;
+      }
+      ctx.setTransform(renderRatio * viewScale, 0, 0, renderRatio * viewScale, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+    }
+
+    const canvasResizeObserver = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(resizeGameCanvas)
+      : null;
+    canvasResizeObserver?.observe(stage);
+    window.addEventListener('resize', resizeGameCanvas, { passive: true });
 
     function handStates() {
       return HAND_IDS.map(id => input.hands[id]);
@@ -2446,10 +2530,12 @@
     ui.cameraStart.addEventListener('click', startCamera);
 
     window.addEventListener('beforeunload', () => {
+      canvasResizeObserver?.disconnect();
       stream?.getTracks().forEach(track => track.stop());
       landmarker?.close?.();
     });
 
+    resizeGameCanvas();
     updateHud();
     requestAnimationFrame(frame);
   </script>
