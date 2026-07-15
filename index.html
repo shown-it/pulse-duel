@@ -511,6 +511,7 @@
     const video = document.getElementById('video');
     const W = canvas.width;
     const H = canvas.height;
+    const VANISH = Object.freeze({ x: W * 0.5, y: H * 0.46 });
 
     const $ = id => document.getElementById(id);
     const ui = {
@@ -1687,7 +1688,7 @@
         y: shot.from.y + (shot.target.y - shot.from.y) * travel,
         progress,
         travel,
-        radius: 4 + Math.pow(progress, 1.7) * 38
+        radius: 3 + Math.pow(travel, 1.25) * 49
       };
     }
 
@@ -1773,11 +1774,16 @@
         const emergence = game.state === 'bossIntro'
           ? Math.min(1, Math.max(0, (now - game.stateAt) / 1200))
           : 1;
-        const depth = (Math.sin(now * 0.00105 + enemy.phase) + 1) * 0.5;
+        const depthWave = (Math.sin(now * 0.00105 + enemy.phase) + 1) * 0.5;
+        const arrival = Math.pow(emergence, 1.45);
+        const depth = Math.min(1, 0.04 + arrival * (0.74 + depthWave * 0.22));
+        const targetX = W * (0.5 + Math.sin(now * 0.00078) * 0.1 + Math.sin(now * 0.00163 + 1.2) * 0.034);
+        const targetY = H * (0.44 + Math.sin(now * 0.00096 + 1.3) * 0.065 + Math.cos(now * 0.00171) * 0.022);
         let pose = {
-          x: W * (0.5 + Math.sin(now * 0.00078) * 0.1 + Math.sin(now * 0.00163 + 1.2) * 0.034),
-          y: H * (0.44 + Math.sin(now * 0.00096 + 1.3) * 0.065 + Math.cos(now * 0.00171) * 0.022 - (1 - emergence) * 0.3),
-          scale: (1.18 + depth * 0.38) * (0.42 + emergence * 0.58)
+          x: VANISH.x + (targetX - VANISH.x) * depth,
+          y: VANISH.y + (targetY - VANISH.y) * depth,
+          scale: (1.18 + depthWave * 0.38) * (0.18 + depth * 0.88),
+          depth
         };
         if (game.state === 'returning' && game.returnTo && index === game.returnTarget) pose = { ...game.returnTo };
         if (now < game.targetHitUntil && index === game.returnTarget) pose.x += Math.sin(now * 0.12) * 11;
@@ -1785,8 +1791,10 @@
       }
       const motionA = 0.00108 + (index % 4) * 0.00013;
       const motionB = 0.00164 + (index % 5) * 0.00011;
-      const depth = (Math.sin(now * (0.00132 + (index % 3) * 0.00017) + enemy.phase) + 1) * 0.5;
-      const emergence = Math.min(1, Math.max(0, (now - (enemy.born ?? game.stateAt)) / 620));
+      const depthWave = (Math.sin(now * (0.00132 + (index % 3) * 0.00017) + enemy.phase) + 1) * 0.5;
+      const emergence = Math.min(1, Math.max(0, (now - (enemy.born ?? game.stateAt)) / 820));
+      const arrival = Math.pow(emergence, 1.6);
+      const depth = Math.min(1, 0.035 + arrival * (0.545 + depthWave * 0.42));
       const count = game.phase === 'squad' ? activeEnemyLimit() : Math.max(1, game.enemies.length);
       const columns = count <= 5 ? 3 : 4;
       const rows = Math.ceil(count / columns);
@@ -1801,10 +1809,13 @@
       const orbitY = Math.cos(now * (motionA * 1.17) + enemy.phase * 0.82) * (0.048 + index % 2 * 0.012)
         + Math.sin(now * (motionB * 1.09) + enemy.phase) * 0.022;
       const baseScale = count <= 5 ? 0.46 : count <= 8 ? 0.37 : 0.31;
+      const targetX = W * (baseX + orbitX);
+      const targetY = H * (baseY + orbitY);
       let pose = {
-        x: W * (baseX + orbitX),
-        y: H * (baseY + orbitY - (1 - emergence) * 0.12),
-        scale: (baseScale + depth * (count <= 5 ? 0.13 : count <= 8 ? 0.105 : 0.085)) * (0.28 + emergence * 0.72)
+        x: VANISH.x + (targetX - VANISH.x) * depth,
+        y: VANISH.y + (targetY - VANISH.y) * depth,
+        scale: (baseScale + depthWave * (count <= 5 ? 0.13 : count <= 8 ? 0.105 : 0.085)) * (0.28 + depth * 0.72),
+        depth
       };
       if (game.state === 'returning' && game.returnTo && index === game.returnTarget) pose = { ...game.returnTo };
       if (now < game.targetHitUntil && index === game.returnTarget) pose.x += Math.sin(now * 0.12) * 8;
@@ -1832,74 +1843,50 @@
     function drawBackground(now) {
       ctx.fillStyle = '#000207';
       ctx.fillRect(0, 0, W, H);
-      const horizon = H * 0.56;
-      const columns = 12;
-      const rows = 7;
-      const mesh = [];
-      const travelPhase = game.travel % 1;
+      const travelPhase = (game.travel * 0.18 + now * 0.000035) % 1;
 
-      ctx.strokeStyle = '#0b2732';
-      ctx.lineWidth = 1;
-      for (let row = 0; row <= rows; row++) {
-        const depth = Math.min(1, (row + travelPhase) / rows);
-        const spread = 40 + depth * W * 0.72;
-        const y = horizon + depth * depth * (H - horizon);
-        const points = [];
-        for (let column = -columns / 2; column <= columns / 2; column++) {
-          const wave = Math.sin(column * 1.45 + row * 0.72 + now * 0.00055) * 5 * depth;
-          points.push({ x: W * 0.5 + column / (columns / 2) * spread, y: y + wave });
-        }
-        mesh.push(points);
-        ctx.beginPath();
-        points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
-        ctx.stroke();
+      // Every layer expands from the same vanishing point used by enemies.
+      for (let layer = 11; layer >= 0; layer--) {
+        const phase = (layer / 12 + travelPhase) % 1;
+        const depth = Math.pow(phase, 2.35);
+        const width = 28 + depth * W * 1.28;
+        const height = 14 + depth * H * 1.36;
+        ctx.globalAlpha = 0.04 + depth * 0.3;
+        ctx.strokeStyle = COLORS[layer % COLORS.length];
+        ctx.lineWidth = depth > 0.7 ? 2 : 1;
+        ctx.strokeRect(VANISH.x - width / 2, VANISH.y - height / 2, width, height);
       }
-
-      for (let column = 0; column <= columns; column++) {
-        ctx.beginPath();
-        mesh.forEach((row, index) => index ? ctx.lineTo(row[column].x, row[column].y) : ctx.moveTo(row[column].x, row[column].y));
-        ctx.stroke();
-      }
-
-      ctx.strokeStyle = '#10283f';
-      for (let i = -5; i <= 5; i++) {
-        ctx.beginPath();
-        ctx.moveTo(W * 0.5, horizon);
-        ctx.lineTo(W * 0.5 + i * 150, 0);
-        ctx.stroke();
-      }
-
-      const scanDepth = game.state === 'advance' ? travelPhase : (game.travel + now * 0.00012) % 1;
-      const scanY = horizon + scanDepth * scanDepth * (H - horizon);
-      ctx.strokeStyle = '#2de2e6';
-      ctx.globalAlpha = 0.48;
-      ctx.beginPath();
-      ctx.moveTo(0, scanY);
-      ctx.lineTo(W, scanY);
-      ctx.stroke();
       ctx.globalAlpha = 1;
 
-      if (game.state === 'advance') {
-        const center = { x: W * 0.5, y: H * 0.46 };
-        for (let index = 0; index < 26; index++) {
-          const angle = index * 2.399 + Math.sin(index * 7.1) * 0.18;
-          const phase = (game.travel * 0.72 + index * 0.137) % 1;
-          const near = 24 + phase * phase * 520;
-          const far = Math.max(12, near - 28 - phase * 92);
-          const stretchY = 0.62;
-          line(
-            { x: center.x + Math.cos(angle) * far, y: center.y + Math.sin(angle) * far * stretchY },
-            { x: center.x + Math.cos(angle) * near, y: center.y + Math.sin(angle) * near * stretchY },
-            COLORS[index % COLORS.length],
-            phase > 0.72 ? 2 : 1,
-            0.12 + phase * 0.5
-          );
-        }
+      const exits = [
+        { x: 0, y: 0 }, { x: W * 0.25, y: 0 }, { x: W * 0.5, y: 0 }, { x: W * 0.75, y: 0 }, { x: W, y: 0 },
+        { x: W, y: H * 0.5 }, { x: W, y: H }, { x: W * 0.75, y: H }, { x: W * 0.5, y: H },
+        { x: W * 0.25, y: H }, { x: 0, y: H }, { x: 0, y: H * 0.5 }
+      ];
+      exits.forEach((exit, index) => line(VANISH, exit, COLORS[index % COLORS.length], 1, 0.11));
+
+      // Sparse vector particles sell forward movement without a costly particle system.
+      for (let index = 0; index < 24; index++) {
+        const angle = index * 2.399 + Math.sin(index * 5.17) * 0.22;
+        const phase = (game.travel * 0.46 + index * 0.137) % 1;
+        const depth = Math.pow(phase, 2.1);
+        const distance = 18 + depth * 690;
+        const tail = 8 + depth * (game.state === 'advance' ? 105 : 62);
+        const stretchY = 0.64;
+        line(
+          { x: VANISH.x + Math.cos(angle) * Math.max(8, distance - tail), y: VANISH.y + Math.sin(angle) * Math.max(8, distance - tail) * stretchY },
+          { x: VANISH.x + Math.cos(angle) * distance, y: VANISH.y + Math.sin(angle) * distance * stretchY },
+          COLORS[index % COLORS.length],
+          depth > 0.72 ? 2 : 1,
+          0.08 + depth * 0.5
+        );
       }
+
+      polygon(VANISH.x, VANISH.y, 12 + Math.sin(now * 0.003) * 2, 4, Math.PI / 4, '#2de2e6', 1, 0.42);
 
       ctx.fillStyle = '#3b4963';
       ctx.font = '10px ui-monospace, monospace';
-      ctx.fillText(game.state === 'advance' ? 'FORWARD_VECTOR / AUTO DRIVE / MESH 13x8' : 'VECTOR_SCAN_SPACE / LANDMARK INPUT / MESH 13x8', 14, H - 14);
+      ctx.fillText(game.state === 'advance' ? 'FORWARD_VECTOR / AUTO DRIVE / DEPTH LINKED' : 'VECTOR_SCAN_SPACE / LANDMARK INPUT / DEPTH LINKED', 14, H - 14);
     }
 
     function polygon(cx, cy, radius, sides, rotation, color, width = 2, alpha = 1) {
@@ -1971,16 +1958,16 @@
         const travel = Math.pow(pastProgress, enemyShot.curve || 2.35);
         const x = enemyShot.from.x + (enemyShot.target.x - enemyShot.from.x) * travel;
         const y = enemyShot.from.y + (enemyShot.target.y - enemyShot.from.y) * travel;
-        const radius = 4 + Math.pow(pastProgress, 1.7) * 38;
-        ctx.globalAlpha = (1 - index / 8) * 0.42;
+        const radius = 3 + Math.pow(travel, 1.25) * 49;
+        ctx.globalAlpha = (1 - index / 8) * (0.18 + travel * 0.48);
         ctx.strokeStyle = COLORS[(enemyShot.color + index) % COLORS.length];
-        ctx.lineWidth = 1;
+        ctx.lineWidth = travel > 0.65 ? 2 : 1;
         ctx.strokeRect(x - radius * 0.62, y - radius * 0.62, radius * 1.24, radius * 1.24);
       }
       ctx.globalAlpha = 1;
 
-      if (shot.progress > 0.68) {
-        const rush = (shot.progress - 0.68) / 0.32;
+      if (shot.progress > 0.58) {
+        const rush = (shot.progress - 0.58) / 0.42;
         const dx = shot.x - enemyShot.from.x;
         const dy = shot.y - enemyShot.from.y;
         const length = Math.max(1, Math.hypot(dx, dy));
@@ -2002,6 +1989,7 @@
       }
 
       pulseBall(shot.x, shot.y, shot.radius, now * 0.016, enemyShot.color);
+      polygon(shot.x, shot.y, shot.radius * (1.2 + shot.travel * 0.28), 4, Math.PI / 4, '#ffffff', shot.travel > 0.72 ? 2 : 1, 0.16 + shot.travel * 0.5);
     }
 
     function drawCatchMarker(shot, now) {
@@ -2025,7 +2013,7 @@
       ctx.textBaseline = 'alphabetic';
     }
 
-    function drawUfoMesh(cx, cy, scale, spin) {
+    function drawUfoMesh(cx, cy, scale, spin, visibility = 1) {
       const rim = [];
       const count = 10;
       for (let i = 0; i < count; i++) {
@@ -2039,23 +2027,24 @@
       const bottom = { x: cx, y: cy + 48 * scale };
       for (let i = 0; i < count; i++) {
         const next = rim[(i + 1) % count];
-        line(rim[i], next, '#2de2e6', 1, 0.48);
-        line(rim[i], i % 2 ? bottom : top, i % 2 ? '#9b5de5' : '#2de2e6', 1, 0.42);
+        line(rim[i], next, '#2de2e6', 1, 0.48 * visibility);
+        line(rim[i], i % 2 ? bottom : top, i % 2 ? '#9b5de5' : '#2de2e6', 1, 0.42 * visibility);
       }
     }
 
     function drawBossMesh(pose, spin, active) {
-      drawUfoMesh(pose.x, pose.y, pose.scale, spin * 0.72);
-      drawUfoMesh(pose.x, pose.y, pose.scale * 0.72, -spin * 1.18);
-      polygon(pose.x, pose.y, 118 * pose.scale, 10, spin, COLORS[1], active ? 3 : 2, 0.86);
-      polygon(pose.x, pose.y, 86 * pose.scale, 6, -spin * 1.5, COLORS[4], 2, 0.82);
-      polygon(pose.x, pose.y, 56 * pose.scale, 8, spin * 2.25, COLORS[2], 3, 0.96);
+      const visibility = 0.28 + (pose.depth ?? 1) * 0.72;
+      drawUfoMesh(pose.x, pose.y, pose.scale, spin * 0.72, visibility);
+      drawUfoMesh(pose.x, pose.y, pose.scale * 0.72, -spin * 1.18, visibility);
+      polygon(pose.x, pose.y, 118 * pose.scale, 10, spin, COLORS[1], active ? 3 : 2, 0.86 * visibility);
+      polygon(pose.x, pose.y, 86 * pose.scale, 6, -spin * 1.5, COLORS[4], 2, 0.82 * visibility);
+      polygon(pose.x, pose.y, 56 * pose.scale, 8, spin * 2.25, COLORS[2], 3, 0.96 * visibility);
       joint({ x: pose.x, y: pose.y }, '#ffffff', 10 * pose.scale);
       for (let arm = 0; arm < 8; arm++) {
         const angle = spin * 0.8 + arm * Math.PI / 4;
         const a = { x: pose.x + Math.cos(angle) * 124 * pose.scale, y: pose.y + Math.sin(angle) * 55 * pose.scale };
         const b = { x: pose.x + Math.cos(angle) * 154 * pose.scale, y: pose.y + Math.sin(angle) * 68 * pose.scale };
-        line(a, b, COLORS[arm % 5], 2, 0.82);
+        line(a, b, COLORS[arm % 5], 2, 0.82 * visibility);
         joint(b, COLORS[(arm + 2) % 5], 4 * pose.scale);
       }
     }
@@ -2082,27 +2071,32 @@
         const active = game.attackers.includes(index) || index === game.activeEnemy;
         if (enemy.boss) {
           drawBossMesh(pose, spin, active);
-          ctx.fillStyle = '#ff5570';
-          ctx.font = '700 12px ui-monospace, monospace';
-          ctx.fillText(`BOSS_OMEGA / HP ${Math.ceil(enemy.hp)}`, pose.x + 104 * pose.scale, pose.y - 82 * pose.scale);
+          if ((pose.depth ?? 1) > 0.46) {
+            ctx.fillStyle = '#ff5570';
+            ctx.font = '700 12px ui-monospace, monospace';
+            ctx.fillText(`BOSS_OMEGA / HP ${Math.ceil(enemy.hp)}`, pose.x + 104 * pose.scale, pose.y - 82 * pose.scale);
+          }
           return;
         }
+        const visibility = 0.2 + (pose.depth ?? 1) * 0.8;
         const coreColor = active ? COLORS[2] : COLORS[(index + 1) % COLORS.length];
-        drawUfoMesh(pose.x, pose.y, pose.scale, spin * (0.7 + index * 0.12));
-        polygon(pose.x, pose.y, 66 * pose.scale, 6, spin + index, COLORS[index], active ? 2 : 1, active ? 0.78 : 0.42);
-        polygon(pose.x, pose.y, 49 * pose.scale, 4, -spin * 1.6 - index, COLORS[(index + 3) % 5], 1, 0.62);
-        polygon(pose.x, pose.y, 31 * pose.scale, 8, spin * 2.1, coreColor, 2, active ? 0.95 : 0.68);
+        drawUfoMesh(pose.x, pose.y, pose.scale, spin * (0.7 + index * 0.12), visibility);
+        polygon(pose.x, pose.y, 66 * pose.scale, 6, spin + index, COLORS[index], active ? 2 : 1, (active ? 0.78 : 0.42) * visibility);
+        polygon(pose.x, pose.y, 49 * pose.scale, 4, -spin * 1.6 - index, COLORS[(index + 3) % 5], 1, 0.62 * visibility);
+        polygon(pose.x, pose.y, 31 * pose.scale, 8, spin * 2.1, coreColor, 2, (active ? 0.95 : 0.68) * visibility);
         joint({ x: pose.x, y: pose.y }, coreColor, 6 * pose.scale);
         for (let arm = 0; arm < 4; arm++) {
           const angle = spin + arm * Math.PI / 2 + index;
           const a = { x: pose.x + Math.cos(angle) * 74 * pose.scale, y: pose.y + Math.sin(angle) * 74 * pose.scale };
           const b = { x: pose.x + Math.cos(angle) * 88 * pose.scale, y: pose.y + Math.sin(angle) * 88 * pose.scale };
-          line(a, b, COLORS[(arm + index) % 5], 1, active ? 0.8 : 0.45);
+          line(a, b, COLORS[(arm + index) % 5], 1, (active ? 0.8 : 0.45) * visibility);
           joint(b, COLORS[(arm + index) % 5], 2.5 * pose.scale);
         }
-        ctx.fillStyle = active ? '#f9f871' : '#ff2a6d';
-        ctx.font = '9px ui-monospace, monospace';
-        ctx.fillText(`UNIT_0${index + 1} / HP ${Math.ceil(enemy.hp)}`, pose.x + 58 * pose.scale, pose.y - 50 * pose.scale);
+        if ((pose.depth ?? 1) > 0.48) {
+          ctx.fillStyle = active ? '#f9f871' : '#ff2a6d';
+          ctx.font = '9px ui-monospace, monospace';
+          ctx.fillText(`UNIT_0${index + 1} / HP ${Math.ceil(enemy.hp)}`, pose.x + 58 * pose.scale, pose.y - 50 * pose.scale);
+        }
       });
 
       if (game.state === 'advance' || game.state === 'encounter') return;
