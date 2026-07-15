@@ -344,42 +344,6 @@
     .button:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
     .button:disabled { opacity: 0.5; cursor: wait; }
 
-    .difficulty-select {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      max-width: 520px;
-      margin: 0 auto 18px;
-    }
-
-    .difficulty-button {
-      min-height: 58px;
-      padding: 8px 6px;
-      border: 1px solid #34415a;
-      background: #050914;
-      color: #748097;
-      cursor: pointer;
-      font: 800 12px ui-monospace, monospace;
-      letter-spacing: 0.08em;
-    }
-
-    .difficulty-button span {
-      display: block;
-      margin-top: 5px;
-      color: #536077;
-      font-size: 9px;
-      letter-spacing: 0.04em;
-    }
-
-    .difficulty-button.selected {
-      border-color: var(--yellow);
-      background: #151302;
-      color: var(--yellow);
-      box-shadow: inset 0 0 0 1px rgba(249, 248, 113, 0.3);
-    }
-
-    .difficulty-button.selected span { color: #a9a64d; }
-
     .note {
       min-height: 1.4em;
       margin: 14px 0 0;
@@ -491,7 +455,7 @@
 
         <div class="message-area">
           <div class="message" id="message">SYSTEM STANDBY</div>
-          <div class="sub-message" id="subMessage">難易度を選び、画面に向けて両手を構える</div>
+          <div class="sub-message" id="subMessage">画面に向けて両手を構える</div>
         </div>
       </div>
 
@@ -504,12 +468,7 @@
             画面に向けて両手を構え、奥から来る弾をキャッチ。<br>
             1周目は敵2機から開始。両手の弾は接触で合体し、ボスを倒すたびに敵と弾が増えます。
           </p>
-          <p class="eyebrow">SELECT DIFFICULTY</p>
-          <div class="difficulty-select" role="group" aria-label="難易度選択">
-            <button class="difficulty-button" type="button" data-difficulty="easy" aria-pressed="false">EASY<span>LOOP 1 / MAX 2</span></button>
-            <button class="difficulty-button selected" type="button" data-difficulty="normal" aria-pressed="true">NORMAL<span>LOOP 1 / MAX 3</span></button>
-            <button class="difficulty-button" type="button" data-difficulty="hard" aria-pressed="false">HARD<span>LOOP 1 / MAX 4</span></button>
-          </div>
+          <p class="eyebrow">LOOP 1 // 2 UNITS // MAX 2 PULSES</p>
           <div class="buttons">
             <button class="button" id="cameraStart">CAMERA START</button>
           </div>
@@ -537,9 +496,6 @@
           <p class="tagline" id="resultRank">CLEAN TRACE</p>
           <p class="lead" id="resultText"></p>
           <p class="note" id="resultGesture">RETRY // SHOW BOTH OPEN PALMS</p>
-          <div class="buttons">
-            <button class="button secondary" id="toTitle">CHANGE DIFFICULTY</button>
-          </div>
         </div>
       </section>
     </main>
@@ -571,8 +527,7 @@
       sub: $('subMessage'), start: $('startModal'), calibration: $('calibrationModal'),
       calibrationNote: $('calibrationNote'), result: $('resultModal'), resultCode: $('resultCode'),
       resultTitle: $('resultTitle'), resultRank: $('resultRank'), resultText: $('resultText'),
-      resultGesture: $('resultGesture'), cameraStart: $('cameraStart'), startNote: $('startNote'),
-      difficultyButtons: [...document.querySelectorAll('[data-difficulty]')], toTitle: $('toTitle')
+      resultGesture: $('resultGesture'), cameraStart: $('cameraStart'), startNote: $('startNote')
     };
 
     const COLORS = ['#2de2e6', '#ff2a6d', '#f9f871', '#72f1b8', '#9b5de5'];
@@ -591,19 +546,12 @@
     const RUN_DURATION = 30000;
     const MAX_ACTIVE_ENEMIES = 5;
     const FUSION_DISTANCE = 82;
-    const DIFFICULTIES = {
-      easy: {
-        label: 'EASY', maxIncoming: 2, squadInterval: [1750, 2150], bossInterval: [1350, 1650],
-        squadDamage: 8, bossDamage: 11
-      },
-      normal: {
-        label: 'NORMAL', maxIncoming: 3, squadInterval: [1350, 1750], bossInterval: [1000, 1300],
-        squadDamage: 10, bossDamage: 14
-      },
-      hard: {
-        label: 'HARD', maxIncoming: 4, squadInterval: [1000, 1300], bossInterval: [760, 980],
-        squadDamage: 12, bossDamage: 17
-      }
+    const BATTLE_PROFILE = {
+      maxIncoming: 2,
+      squadInterval: [1750, 2150],
+      bossInterval: [1350, 1650],
+      squadDamage: 8,
+      bossDamage: 11
     };
 
     const labels = {
@@ -615,7 +563,7 @@
     };
 
     const game = {
-      state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad', difficulty: 'normal', loop: 1,
+      state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad', loop: 1,
       playerHp: 100, enemies: [], activeEnemy: 0, shooterCursor: 0, attackSide: 'left',
       guardAt: -Infinity, guardPoint: null, enemyShots: [], shotOriginOffset: { x: -90, y: 0 },
       returnFrom: null, returnTo: null, returnTarget: 0,
@@ -742,12 +690,8 @@
       ui.sub.textContent = sub;
     }
 
-    function difficultyProfile() {
-      return DIFFICULTIES[game.difficulty] || DIFFICULTIES.normal;
-    }
-
     function maxIncomingCount() {
-      return difficultyProfile().maxIncoming + Math.max(0, game.loop - 1);
+      return BATTLE_PROFILE.maxIncoming + Math.max(0, game.loop - 1);
     }
 
     function activeEnemyLimit() {
@@ -759,8 +703,7 @@
     }
 
     function scoreFactor(loop = game.loop) {
-      const difficulty = { easy: 1, normal: 1.25, hard: 1.5 }[game.difficulty] || 1;
-      return difficulty * Math.max(1, loop);
+      return Math.max(1, loop);
     }
 
     function updateScore() {
@@ -784,10 +727,9 @@
       ui.playerHealthTrack.setAttribute('aria-valuenow', playerHp);
       if (game.phase === 'boss') {
         const boss = game.enemies[0];
-        const profile = difficultyProfile();
         const ratio = boss ? Math.max(0, boss.hp / boss.maxHp) : 0;
         ui.targetName.textContent = `OMEGA CORE / LOOP ${game.loop}`;
-        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / MAX ${maxIncomingCount()} / ${profile.label}`;
+        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / MAX ${maxIncomingCount()}`;
         ui.enemyHealths.forEach((bar, index) => {
           const segments = ui.enemyHealths.length;
           const segmentRatio = Math.max(0, Math.min(1, (ratio - index / segments) * segments));
@@ -811,14 +753,13 @@
         });
       } else {
         const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
-        const profile = difficultyProfile();
         if (game.state === 'idle') {
           ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
-          ui.enemyHp.textContent = `${profile.label} / 2 UNITS / MAX ${profile.maxIncoming}`;
+          ui.enemyHp.textContent = `2 UNITS / MAX ${BATTLE_PROFILE.maxIncoming}`;
         } else {
           const seconds = Math.max(0, Math.ceil((game.bossAt - performance.now()) / 1000));
           ui.targetName.textContent = `LOOP ${game.loop} / BOSS IN ${seconds}s`;
-          ui.enemyHp.textContent = `${alive}/${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} / ${profile.label}`;
+          ui.enemyHp.textContent = `${alive}/${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()}`;
         }
         ui.enemyHealths.forEach((bar, index) => {
           const enemy = game.enemies[index];
@@ -1042,7 +983,7 @@
     }
 
     function spawnEnemyShot(now) {
-      const profile = difficultyProfile();
+      const profile = BATTLE_PROFILE;
       const alive = game.enemies
         .map((enemy, index) => enemy.hp > 0 ? index : -1)
         .filter(index => index >= 0);
@@ -1106,7 +1047,7 @@
 
     function updateEnemyFire(now) {
       if (game.state !== 'attack' || !['squad', 'boss'].includes(game.phase)) return;
-      const profile = difficultyProfile();
+      const profile = BATTLE_PROFILE;
       const maxIncoming = maxIncomingCount();
       if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
       if (!spawnEnemyShot(now)) {
@@ -1461,12 +1402,12 @@
         ui.resultCode.textContent = 'OMEGA ELIMINATED';
         ui.resultTitle.textContent = 'BOSS DOWN';
         ui.resultRank.textContent = `SCORE ${Math.round(game.score).toLocaleString()}`;
-        ui.resultText.textContent = `${clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED'} / ${difficultyProfile().label} / LOOP ${game.loop}`;
+        ui.resultText.textContent = `${clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED'} / LOOP ${game.loop}`;
       } else {
         ui.resultCode.textContent = 'SESSION FAILED';
         ui.resultTitle.textContent = 'SYNC LOST';
         ui.resultRank.textContent = `SCORE ${Math.round(game.score).toLocaleString()}`;
-        ui.resultText.textContent = `${difficultyProfile().label} / LOOP ${game.loop} / ${game.kills} DOWN / ${game.stats.guards} CATCH`;
+        ui.resultText.textContent = `LOOP ${game.loop} / ${game.kills} DOWN / ${game.stats.guards} CATCH`;
       }
     }
 
@@ -2509,29 +2450,6 @@
     }
 
     ui.cameraStart.addEventListener('click', startCamera);
-    ui.difficultyButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        game.difficulty = button.dataset.difficulty;
-        ui.difficultyButtons.forEach(item => {
-          const selected = item === button;
-          item.classList.toggle('selected', selected);
-          item.setAttribute('aria-pressed', String(selected));
-        });
-        const profile = difficultyProfile();
-        updateHud();
-        say(`${profile.label} MODE SELECTED`, `LOOP 1 / MAX ${profile.maxIncoming} PULSES`);
-      });
-    });
-    ui.toTitle.addEventListener('click', () => {
-      ui.result.hidden = true;
-      ui.calibration.hidden = true;
-      ui.start.hidden = false;
-      ui.cameraStart.disabled = false;
-      game.retrySince = 0;
-      game.retryReadyAt = 0;
-      setState('idle');
-      say('SELECT DIFFICULTY', '難易度を選び、画面に向けて両手を構える');
-    });
 
     window.addEventListener('beforeunload', () => {
       stream?.getTracks().forEach(track => track.stop());
