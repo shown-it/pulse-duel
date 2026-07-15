@@ -425,7 +425,7 @@
         </div>
 
         <div class="target-hud">
-          <span class="target-name" id="targetName">HOSTILE SQUAD / PULSE CORES</span>
+          <span class="target-name" id="targetName">FORWARD SCAN / PULSE CONTACTS</span>
           <div class="health-row">
             <div class="squad-health" id="squadHealth" aria-label="Enemy squad health">
               <div class="unit-health-track"><span class="health-fill enemy" id="enemyHealth0"></span></div>
@@ -453,10 +453,10 @@
         <div class="card">
           <p class="eyebrow">MOTION DUEL PROTOTYPE</p>
           <h1>PULSE//DUEL</h1>
-          <p class="tagline">READ. BLOCK. RETURN.</p>
+          <p class="tagline">ADVANCE. CATCH. RETURN.</p>
           <p class="lead">
-            エネルギー弾に手のスケルトンのどこかを重ねてブロック。<br>
-            小さなシェイクで威力を溜め、大きな一振りでUFO編隊へ撃ち返してください。
+            ヴェクター空間を前進し、敵と接触すると自動停止。<br>
+            接近する弾にCATCHサインが出たら手でつかみ、大きな一振りで投げ返してください。
           </p>
           <div class="buttons">
             <button class="button" id="cameraStart">CAMERA LINK</button>
@@ -538,7 +538,7 @@
     ];
 
     const labels = {
-      idle: 'IDLE', intro: 'LINKED', read: 'CORE CHARGE',
+      idle: 'IDLE', intro: 'LINKED', advance: 'FORWARD DRIVE', encounter: 'CONTACT', read: 'CORE CHARGE',
       attack: 'PULSE INCOMING', counter: 'RETURN WINDOW', returning: 'PULSE RETURN', recover: 'COOL DOWN',
       bossWarning: 'THREAT ALERT', bossIntro: 'OMEGA ONLINE',
       finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', win: 'COMPLETE', lose: 'FAILED',
@@ -554,6 +554,7 @@
       volleyCaptured: 0, volleyMissed: 0,
       finalIndex: 0, finalDeadline: 0, hitUntil: 0, hurtUntil: 0, targetHitUntil: 0,
       warningAnnounced: false, lastDamage: 25,
+      travel: 0, lastUpdateAt: performance.now(), bossPending: false,
       stats: { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 }
     };
 
@@ -609,8 +610,18 @@
         });
       } else {
         const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
-        ui.targetName.textContent = 'HOSTILE SQUAD / PULSE CORES';
-        ui.enemyHp.textContent = `${alive} ACTIVE`;
+        const cleared = game.enemies.length - alive;
+        if (game.state === 'idle') {
+          ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
+          ui.enemyHp.textContent = '3 CONTACTS';
+        } else {
+          ui.targetName.textContent = game.state === 'advance'
+            ? 'FORWARD SCAN / NEXT CONTACT'
+            : 'HOSTILE CONTACT / PULSE CORE';
+          ui.enemyHp.textContent = game.state === 'advance'
+            ? `${cleared}/3 CLEARED`
+            : `CONTACT ${Math.min(3, game.activeEnemy + 1)}/3`;
+        }
         ui.enemyHealths.forEach((bar, index) => {
           const enemy = game.enemies[index];
           const ratio = enemy ? Math.max(0, enemy.hp / enemy.maxHp) : 0;
@@ -650,7 +661,7 @@
       ui.result.hidden = true;
       game.phase = 'squad';
       game.playerHp = 100;
-      game.enemies = [0, 1, 2].map(index => ({ hp: 24, maxHp: 24, phase: index * 2.1 }));
+      game.enemies = [0, 1, 2].map(index => ({ hp: 18, maxHp: 18, phase: index * 2.1 }));
       game.activeEnemy = 0;
       game.shooterCursor = 0;
       game.finalIndex = 0;
@@ -667,16 +678,43 @@
       game.volleyMissed = 0;
       game.warningAnnounced = false;
       game.lastDamage = 25;
+      game.travel = 0;
+      game.lastUpdateAt = now;
+      game.bossPending = false;
       resetAttackMotion();
       strikes.length = 0;
       particles.length = 0;
       destructionEffects.length = 0;
       resetStats();
-      updateHud();
-      setState('intro', now);
-      say('CHANNEL LINKED', '3 UNIT PULSE SQUAD を捕捉');
-      game.nextAt = now + 1100;
+      beginAdvance(now, false, true);
       tone(220, 0.12);
+    }
+
+    function beginAdvance(now, bossPending = false, firstRun = false) {
+      game.bossPending = bossPending;
+      game.enemyShots = [];
+      game.guardAt = -Infinity;
+      game.guardPoint = null;
+      setState('advance', now);
+      updateHud();
+      if (bossPending) {
+        say('SECTOR CLEAR / FORWARD', '巨大反応まで航行を継続');
+        game.nextAt = now + 4200;
+      } else {
+        say(firstRun ? 'FORWARD DRIVE ONLINE' : 'FORWARD DRIVE RESUMED', '次の接触まで自動前進');
+        game.nextAt = now + (firstRun ? 1800 : 2200);
+      }
+    }
+
+    function beginEncounter(now) {
+      const nextEnemy = game.enemies.findIndex(enemy => enemy.hp > 0);
+      if (nextEnemy < 0) return beginBossWarning(now);
+      game.activeEnemy = nextEnemy;
+      setState('encounter', now);
+      updateHud();
+      say(`CONTACT ${nextEnemy + 1}/3`, 'FORWARD DRIVE HALTED');
+      game.nextAt = now + 900;
+      tone(310, 0.1, 0.025);
     }
 
     function beginRead(now = performance.now()) {
@@ -688,8 +726,8 @@
         if (game.phase === 'squad') return beginBossWarning(now);
         return finish(true);
       }
-      game.activeEnemy = game.phase === 'boss' ? 0 : alive[game.shooterCursor % alive.length];
-      game.shooterCursor += 1;
+      if (game.phase === 'boss') game.activeEnemy = 0;
+      else if (!game.enemies[game.activeEnemy] || game.enemies[game.activeEnemy].hp <= 0) game.activeEnemy = alive[0];
       game.attackSide = Math.random() < 0.5 ? 'left' : 'right';
       const side = game.attackSide === 'left' ? -1 : 1;
       game.shotOriginOffset = {
@@ -703,12 +741,12 @@
         say('OMEGA CORE / MULTI CHARGE', '5つの着弾点を走査');
         game.nextAt = now + 780;
       } else {
-        say(`UNIT ${game.activeEnemy + 1} / ${game.attackSide.toUpperCase()} ARC`, '発射点と着弾点を追う');
-        game.nextAt = now + 980;
+        say(`CONTACT ${game.activeEnemy + 1} / CORE CHARGE`, '奥の発射点を注視');
+        game.nextAt = now + 720;
       }
     }
 
-    function chooseImpact(origin, occupied = []) {
+    function chooseImpact(origin, occupied = [], collisionTravel = 0.45) {
       const hand = { x: input.visible ? input.x : 0.5, y: input.visible ? input.y : 0.62 };
       let impact = { x: 0.2, y: 0.52 };
       let impactFound = false;
@@ -716,8 +754,8 @@
         const candidate = { x: 0.08 + Math.random() * 0.84, y: 0.12 + Math.random() * 0.76 };
         impact = candidate;
         const collisionStart = {
-          x: origin.x + (candidate.x - origin.x) * 0.45,
-          y: origin.y + (candidate.y - origin.y) * 0.45
+          x: origin.x + (candidate.x - origin.x) * collisionTravel,
+          y: origin.y + (candidate.y - origin.y) * collisionTravel
         };
         const handDistance = Math.hypot(candidate.x - hand.x, candidate.y - hand.y);
         const pathDistance = pointSegmentDistance(hand, collisionStart, candidate);
@@ -783,13 +821,16 @@
           y: pose.y + game.shotOriginOffset.y * pose.scale
         };
         const origin = { x: port.x / W, y: port.y / H };
-        const impact = chooseImpact(origin);
+        const catchStartTravel = Math.pow((3400 - 2000) / 3400, 1.55);
+        const impact = chooseImpact(origin, [], catchStartTravel);
         game.enemyShots = [{
           from: port,
           target: { x: impact.x * W, y: impact.y * H },
           markerDelay: 0,
-          delay: 320,
-          flight: 1000,
+          delay: 0,
+          flight: 3400,
+          catchWindow: 2000,
+          curve: 1.55,
           damage: 25,
           order: 1,
           color: sign < 0 ? 0 : 1,
@@ -800,22 +841,26 @@
       game.volleyCaptured = 0;
       game.volleyMissed = 0;
       setState('attack', now);
-      say(game.phase === 'boss' ? 'MULTI IMPACT LOCK / 5' : 'IMPACT LOCK', '四角い着弾枠へ手を動かす');
-      game.nextAt = now + (game.phase === 'boss' ? 4670 : 1370);
+      say(game.phase === 'boss' ? 'MULTI IMPACT LOCK / 5' : 'PULSE INBOUND', game.phase === 'boss' ? '四角い着弾枠へ手を動かす' : '接近するとCATCHサインが起動');
+      game.nextAt = now + (game.phase === 'boss' ? 4670 : 3470);
       tone(380, 0.05);
+    }
+
+    function openCounter(now, result) {
+      setState('counter', now);
+      game.shakePower = 0;
+      resetAttackMotion(now);
+      say(result, '大きく振って敵へ投げ返す');
+      game.nextAt = now + 2600;
+      tone(660, 0.08);
     }
 
     function resolveAttack(now) {
       if (game.volleyCaptured > 0 && game.playerHp > 0) {
-        setState('counter', now);
-        game.shakePower = 0;
-        resetAttackMotion(now);
         const result = game.phase === 'boss'
           ? `${game.volleyCaptured}/5 BLOCKED / ${game.volleyMissed} HIT`
           : 'PULSE CAPTURED';
-        say(result, '小さくシェイクでPOWER蓄積 ／ 大きく振ってRETURN');
-        game.nextAt = now + 2600;
-        tone(660, 0.08);
+        openCounter(now, result);
       } else {
         setState('recover', now);
         const result = game.phase === 'boss' ? `${game.volleyMissed}/5 IMPACT` : `${game.lastDamage} DAMAGE`;
@@ -944,11 +989,10 @@
           say('OMEGA CORE ELIMINATED', 'ALL HOSTILE SIGNALS OFFLINE');
           game.nextAt = now + 1800;
         } else if (!alive) {
-          beginBossWarning(now);
+          beginAdvance(now, true);
         } else {
-          setState('recover', now);
-          say(`UNIT ${game.returnTarget + 1} DESTROYED`, `${alive} HOSTILES REMAINING`);
-          game.nextAt = now + 950;
+          beginAdvance(now, false);
+          say(`CONTACT ${game.returnTarget + 1} DESTROYED`, 'FORWARD DRIVE RESUMED');
         }
       } else {
         burst(target.x, target.y, Math.round(26 + game.returnPower * 38));
@@ -1020,11 +1064,19 @@
     }
 
     function update(now) {
+      const updateDelta = Math.max(0, Math.min(50, now - game.lastUpdateAt));
+      game.lastUpdateAt = now;
+      if (game.state === 'advance') game.travel += updateDelta * 0.00135;
       if (game.state === 'attack') {
         tryHandBlock(now);
         resolveExpiredShots(now);
       }
-      if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
+      if (game.state === 'advance' && now >= game.nextAt) {
+        if (game.bossPending) beginBossWarning(now);
+        else beginEncounter(now);
+      }
+      else if (game.state === 'encounter' && now >= game.nextAt) beginRead(now);
+      else if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'bossWarning' && !game.warningAnnounced && now - game.stateAt >= 650) {
         game.warningAnnounced = true;
         say('WARNING / MASSIVE SIGNAL', 'OMEGA CLASS APPROACHING');
@@ -1240,7 +1292,7 @@
       const elapsed = now - game.stateAt - shot.delay;
       if (elapsed < 0) return null;
       const progress = Math.max(0, Math.min(1, elapsed / shot.flight));
-      const travel = Math.pow(progress, 2.35);
+      const travel = Math.pow(progress, shot.curve || 2.35);
       return {
         x: shot.from.x + (shot.target.x - shot.from.x) * travel,
         y: shot.from.y + (shot.target.y - shot.from.y) * travel,
@@ -1266,7 +1318,10 @@
         if (enemyShot.resolved) continue;
         const shot = shotPosition(now, enemyShot);
         if (!shot) continue;
-        if (shot.travel < 0.45) continue;
+        const remaining = enemyShot.delay + enemyShot.flight - (now - game.stateAt);
+        if (enemyShot.catchWindow) {
+          if (remaining < 0 || remaining > enemyShot.catchWindow) continue;
+        } else if (shot.travel < 0.45) continue;
         const jointRadius = 16 + shot.radius * 0.58;
         const boneRadius = 12 + shot.radius * 0.55;
         const jointHit = points.some(point => Math.hypot(shot.x - point.x, shot.y - point.y) <= jointRadius);
@@ -1284,6 +1339,7 @@
             : 'SHOT CAPTURED';
           say(message, '反撃エネルギーへ変換');
           tone(620 + game.volleyCaptured * 35, 0.08);
+          if (game.phase === 'squad') openCounter(now, 'PULSE CAUGHT / RETURN READY');
           break;
         }
       }
@@ -1325,12 +1381,14 @@
         if (now < game.targetHitUntil && index === game.returnTarget) pose.x += Math.sin(now * 0.12) * 11;
         return pose;
       }
-      const formation = [-0.22, 0, 0.22][index] || 0;
       const depth = (Math.sin(now * 0.00108 + enemy.phase) + 1) * 0.5;
+      const emergence = game.state === 'encounter'
+        ? Math.min(1, Math.max(0, (now - game.stateAt) / 850))
+        : 1;
       let pose = {
-        x: W * (0.5 + formation + Math.sin(now * 0.00072 + enemy.phase) * 0.06 + Math.sin(now * 0.00152 + enemy.phase) * 0.022),
-        y: H * (0.47 + Math.sin(now * 0.00092 + 1.4 + enemy.phase) * 0.052),
-        scale: 0.54 + depth * 0.28
+        x: W * (0.5 + Math.sin(now * 0.00072 + enemy.phase) * 0.045 + Math.sin(now * 0.00152 + enemy.phase) * 0.016),
+        y: H * (0.46 + Math.sin(now * 0.00092 + 1.4 + enemy.phase) * 0.035 - (1 - emergence) * 0.19),
+        scale: (0.66 + depth * 0.15) * (0.28 + emergence * 0.72)
       };
       if (game.state === 'returning' && game.returnTo && index === game.returnTarget) pose = { ...game.returnTo };
       if (now < game.targetHitUntil && index === game.returnTarget) pose.x += Math.sin(now * 0.12) * 8;
@@ -1362,11 +1420,12 @@
       const columns = 12;
       const rows = 7;
       const mesh = [];
+      const travelPhase = game.travel % 1;
 
       ctx.strokeStyle = '#0b2732';
       ctx.lineWidth = 1;
       for (let row = 0; row <= rows; row++) {
-        const depth = row / rows;
+        const depth = Math.min(1, (row + travelPhase) / rows);
         const spread = 40 + depth * W * 0.72;
         const y = horizon + depth * depth * (H - horizon);
         const points = [];
@@ -1394,7 +1453,7 @@
         ctx.stroke();
       }
 
-      const scanDepth = (now * 0.00022) % 1;
+      const scanDepth = game.state === 'advance' ? travelPhase : (game.travel + now * 0.00012) % 1;
       const scanY = horizon + scanDepth * scanDepth * (H - horizon);
       ctx.strokeStyle = '#2de2e6';
       ctx.globalAlpha = 0.48;
@@ -1404,9 +1463,27 @@
       ctx.stroke();
       ctx.globalAlpha = 1;
 
+      if (game.state === 'advance') {
+        const center = { x: W * 0.5, y: H * 0.46 };
+        for (let index = 0; index < 26; index++) {
+          const angle = index * 2.399 + Math.sin(index * 7.1) * 0.18;
+          const phase = (game.travel * 0.72 + index * 0.137) % 1;
+          const near = 24 + phase * phase * 520;
+          const far = Math.max(12, near - 28 - phase * 92);
+          const stretchY = 0.62;
+          line(
+            { x: center.x + Math.cos(angle) * far, y: center.y + Math.sin(angle) * far * stretchY },
+            { x: center.x + Math.cos(angle) * near, y: center.y + Math.sin(angle) * near * stretchY },
+            COLORS[index % COLORS.length],
+            phase > 0.72 ? 2 : 1,
+            0.12 + phase * 0.5
+          );
+        }
+      }
+
       ctx.fillStyle = '#3b4963';
       ctx.font = '10px ui-monospace, monospace';
-      ctx.fillText('VECTOR_SCAN_SPACE / LANDMARK INPUT / MESH 13x8', 14, H - 14);
+      ctx.fillText(game.state === 'advance' ? 'FORWARD_VECTOR / AUTO DRIVE / MESH 13x8' : 'VECTOR_SCAN_SPACE / LANDMARK INPUT / MESH 13x8', 14, H - 14);
     }
 
     function polygon(cx, cy, radius, sides, rotation, color, width = 2, alpha = 1) {
@@ -1454,26 +1531,28 @@
       ctx.globalAlpha = 1;
     }
 
-    function drawIncomingShot(enemyShot, shot, now) {
+    function drawIncomingShot(enemyShot, shot, now, showGuide = true) {
       const color = COLORS[enemyShot.color % COLORS.length];
       const markerHalf = 22;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.08 + shot.progress * 0.12;
-      for (const corner of [
-        { x: -markerHalf, y: -markerHalf }, { x: markerHalf, y: -markerHalf },
-        { x: -markerHalf, y: markerHalf }, { x: markerHalf, y: markerHalf }
-      ]) {
-        ctx.beginPath();
-        ctx.moveTo(enemyShot.from.x, enemyShot.from.y);
-        ctx.lineTo(enemyShot.target.x + corner.x, enemyShot.target.y + corner.y);
-        ctx.stroke();
+      if (showGuide) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.08 + shot.progress * 0.12;
+        for (const corner of [
+          { x: -markerHalf, y: -markerHalf }, { x: markerHalf, y: -markerHalf },
+          { x: -markerHalf, y: markerHalf }, { x: markerHalf, y: markerHalf }
+        ]) {
+          ctx.beginPath();
+          ctx.moveTo(enemyShot.from.x, enemyShot.from.y);
+          ctx.lineTo(enemyShot.target.x + corner.x, enemyShot.target.y + corner.y);
+          ctx.stroke();
+        }
       }
 
       for (let index = 7; index >= 1; index--) {
         const pastProgress = Math.max(0, shot.progress - index * 0.055);
         if (pastProgress <= 0) continue;
-        const travel = Math.pow(pastProgress, 2.35);
+        const travel = Math.pow(pastProgress, enemyShot.curve || 2.35);
         const x = enemyShot.from.x + (enemyShot.target.x - enemyShot.from.x) * travel;
         const y = enemyShot.from.y + (enemyShot.target.y - enemyShot.from.y) * travel;
         const radius = 4 + Math.pow(pastProgress, 1.7) * 38;
@@ -1507,6 +1586,35 @@
       }
 
       pulseBall(shot.x, shot.y, shot.radius, now * 0.016, enemyShot.color);
+    }
+
+    function drawCatchMarker(shot, remaining, now) {
+      const pulse = 0.5 + Math.sin(now * 0.02) * 0.5;
+      const size = 88 + pulse * 10;
+      const color = '#72f1b8';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.72 + pulse * 0.28;
+      ctx.strokeRect(shot.x - size / 2, shot.y - size / 2, size, size);
+      ctx.strokeStyle = '#2de2e6';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(shot.x - size / 2 + 7, shot.y - size / 2 + 7, size - 14, size - 14);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#000207';
+      ctx.fillRect(shot.x - 36, shot.y - 19, 72, 38);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(shot.x - 36, shot.y - 19, 72, 38);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 24px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${Math.max(0, remaining / 1000).toFixed(1)}s`, shot.x, shot.y + 1);
+      ctx.fillStyle = color;
+      ctx.font = '800 11px ui-monospace, monospace';
+      ctx.fillText('CATCH', shot.x, shot.y - size / 2 - 8);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
     }
 
     function drawUfoMesh(cx, cy, scale, spin) {
@@ -1561,6 +1669,7 @@
       const spin = now * 0.00045;
       game.enemies.forEach((enemy, index) => {
         if (enemy.hp <= 0) return;
+        if (game.phase === 'squad' && (game.state === 'advance' || index !== game.activeEnemy)) return;
         const pose = enemyPose(now, index);
         const active = index === game.activeEnemy;
         if (enemy.boss) {
@@ -1588,6 +1697,8 @@
         ctx.fillText(`UNIT_0${index + 1} / HP ${Math.ceil(enemy.hp)}`, pose.x + 58 * pose.scale, pose.y - 50 * pose.scale);
       });
 
+      if (game.state === 'advance' || game.state === 'encounter') return;
+
       const effectIndex = game.state === 'returning' ? game.returnTarget : game.activeEnemy;
       const effectEnemy = game.enemies[effectIndex];
       if (!effectEnemy || effectEnemy.hp <= 0) return;
@@ -1609,6 +1720,14 @@
       } else if (game.state === 'attack') {
         for (const enemyShot of game.enemyShots) {
           if (enemyShot.resolved) continue;
+          if (!effectEnemy.boss) {
+            const shot = shotPosition(now, enemyShot);
+            if (!shot) continue;
+            drawIncomingShot(enemyShot, shot, now, false);
+            const remaining = enemyShot.delay + enemyShot.flight - elapsed;
+            if (remaining >= 0 && remaining <= enemyShot.catchWindow) drawCatchMarker(shot, remaining, now);
+            continue;
+          }
           const markerAge = elapsed - (enemyShot.markerDelay || 0);
           if (markerAge < 0) continue;
           const marker = enemyShot.target;
@@ -1924,7 +2043,7 @@
     }
 
     stage.addEventListener('pointerdown', event => {
-      if (!['intro','read','attack','counter','recover','finalIntro','final'].includes(game.state)) return;
+      if (!['advance','encounter','intro','read','attack','counter','recover','finalIntro','final'].includes(game.state)) return;
       input.pointerDown = true;
       input.pointerStart = eventPoint(event);
       input.x = input.pointerStart.x;
