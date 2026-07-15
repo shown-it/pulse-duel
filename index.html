@@ -344,6 +344,42 @@
     .button:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
     .button:disabled { opacity: 0.5; cursor: wait; }
 
+    .difficulty-select {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      max-width: 520px;
+      margin: 0 auto 18px;
+    }
+
+    .difficulty-button {
+      min-height: 58px;
+      padding: 8px 6px;
+      border: 1px solid #34415a;
+      background: #050914;
+      color: #748097;
+      cursor: pointer;
+      font: 800 12px ui-monospace, monospace;
+      letter-spacing: 0.08em;
+    }
+
+    .difficulty-button span {
+      display: block;
+      margin-top: 5px;
+      color: #536077;
+      font-size: 9px;
+      letter-spacing: 0.04em;
+    }
+
+    .difficulty-button.selected {
+      border-color: var(--yellow);
+      background: #151302;
+      color: var(--yellow);
+      box-shadow: inset 0 0 0 1px rgba(249, 248, 113, 0.3);
+    }
+
+    .difficulty-button.selected span { color: #a9a64d; }
+
     .note {
       min-height: 1.4em;
       margin: 14px 0 0;
@@ -454,7 +490,7 @@
 
         <div class="message-area">
           <div class="message" id="message">SYSTEM STANDBY</div>
-          <div class="sub-message" id="subMessage">CAMERA LINK または MANUAL MODE を選択</div>
+          <div class="sub-message" id="subMessage">難易度を選び、画面に向けて両手を構える</div>
         </div>
       </div>
 
@@ -464,17 +500,21 @@
           <h1>PULSE//DUEL</h1>
           <p class="tagline">ADVANCE. CATCH. RETURN.</p>
           <p class="lead">
-            ヴェクター空間を前進し続け、次々出現する敵の連続弾をキャッチ。<br>
-            両手の弾を接触させると合体し、3体貫通の強力弾に。30秒間走り抜けるとボスが出現します。
+            画面に向けて両手を構え、奥から来る弾をキャッチ。<br>
+            両手の弾は接触で合体し、3体貫通の強力弾に。30秒間走り抜けるとボスが出現します。
           </p>
+          <p class="eyebrow">SELECT DIFFICULTY</p>
+          <div class="difficulty-select" role="group" aria-label="難易度選択">
+            <button class="difficulty-button" type="button" data-difficulty="easy" aria-pressed="false">EASY<span>MAX 2 PULSES</span></button>
+            <button class="difficulty-button selected" type="button" data-difficulty="normal" aria-pressed="true">NORMAL<span>MAX 3 PULSES</span></button>
+            <button class="difficulty-button" type="button" data-difficulty="hard" aria-pressed="false">HARD<span>MAX 4 PULSES</span></button>
+          </div>
           <div class="buttons">
-            <button class="button" id="cameraStart">CAMERA LINK</button>
-            <button class="button secondary" id="manualStart">MANUAL MODE</button>
+            <button class="button" id="cameraStart">CAMERA START</button>
           </div>
           <p class="note" id="startNote"></p>
           <p class="privacy">
-            映像・座標はブラウザ内で処理し、保存・送信しません。<br>
-            手動操作：画面の左右で対応する手を選び、ドラッグ／矢印キーでリターン。
+            カメラと両手が必要です。映像・座標はブラウザ内で処理し、保存・送信しません。
           </p>
         </div>
       </section>
@@ -482,13 +522,10 @@
       <section class="modal" id="calibrationModal" hidden>
         <div class="card">
           <p class="eyebrow">CALIBRATION</p>
-          <div class="calibration">42 PTS MAX</div>
-          <h2>OPEN PALM // HOLD</h2>
-          <p class="lead">開いた掌をカメラ中央で約1秒静止してください。</p>
-          <p class="note" id="calibrationNote">SEARCHING HAND...</p>
-          <div class="buttons">
-            <button class="button secondary" id="fallback">MANUAL MODE</button>
-          </div>
+          <div class="calibration">2 HANDS</div>
+          <h2>DUAL PALM // HOLD</h2>
+          <p class="lead">画面に向けて両手を構え、開いた掌をしばらく静止してください。</p>
+          <p class="note" id="calibrationNote">SEARCHING FOR 2 HANDS...</p>
         </div>
       </section>
 
@@ -498,24 +535,22 @@
           <h2 id="resultTitle">TARGET DOWN</h2>
           <p class="tagline" id="resultRank">CLEAN TRACE</p>
           <p class="lead" id="resultText"></p>
+          <p class="note" id="resultGesture">RETRY // SHOW BOTH OPEN PALMS</p>
           <div class="buttons">
-            <button class="button" id="retry">RETRY</button>
-            <button class="button secondary" id="toTitle">DISCONNECT</button>
+            <button class="button secondary" id="toTitle">CHANGE DIFFICULTY</button>
           </div>
         </div>
       </section>
     </main>
 
     <footer class="footer">
-      <span>DUAL HOLD → HANDS TOGETHER / FUSION　SWING HARD TO RETURN　<kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></span>
-      <button class="text-button" id="reset">R / RESET</button>
+      <span>CAMERA + DUAL HANDS ONLY　DUAL HOLD → HANDS TOGETHER / FUSION　SWING HARD TO RETURN</span>
     </footer>
   </div>
 
   <script type="module">
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d', { alpha: false });
-    const stage = document.getElementById('stage');
     const video = document.getElementById('video');
     const W = canvas.width;
     const H = canvas.height;
@@ -535,8 +570,8 @@
       sub: $('subMessage'), start: $('startModal'), calibration: $('calibrationModal'),
       calibrationNote: $('calibrationNote'), result: $('resultModal'), resultCode: $('resultCode'),
       resultTitle: $('resultTitle'), resultRank: $('resultRank'), resultText: $('resultText'),
-      cameraStart: $('cameraStart'), manualStart: $('manualStart'), startNote: $('startNote'),
-      fallback: $('fallback'), retry: $('retry'), toTitle: $('toTitle'), reset: $('reset')
+      resultGesture: $('resultGesture'), cameraStart: $('cameraStart'), startNote: $('startNote'),
+      difficultyButtons: [...document.querySelectorAll('[data-difficulty]')], toTitle: $('toTitle')
     };
 
     const COLORS = ['#2de2e6', '#ff2a6d', '#f9f871', '#72f1b8', '#9b5de5'];
@@ -553,8 +588,22 @@
     const THROW_DISTANCE = 0.13;
     const THROW_SPEED = 0.0003;
     const RUN_DURATION = 30000;
-    const MAX_ACTIVE_ENEMIES = 8;
+    const MAX_ACTIVE_ENEMIES = 5;
     const FUSION_DISTANCE = 82;
+    const DIFFICULTIES = {
+      easy: {
+        label: 'EASY', maxIncoming: 2, squadInterval: [1750, 2150], bossInterval: [1350, 1650],
+        squadDamage: 8, bossDamage: 11
+      },
+      normal: {
+        label: 'NORMAL', maxIncoming: 3, squadInterval: [1350, 1750], bossInterval: [1000, 1300],
+        squadDamage: 10, bossDamage: 14
+      },
+      hard: {
+        label: 'HARD', maxIncoming: 4, squadInterval: [1000, 1300], bossInterval: [760, 980],
+        squadDamage: 12, bossDamage: 17
+      }
+    };
 
     const labels = {
       idle: 'IDLE', intro: 'LINKED', advance: 'FORWARD DRIVE', encounter: 'CONTACT', read: 'CORE CHARGE',
@@ -565,14 +614,14 @@
     };
 
     const game = {
-      state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad',
+      state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad', difficulty: 'normal',
       playerHp: 100, enemies: [], activeEnemy: 0, shooterCursor: 0, attackSide: 'left',
       guardAt: -Infinity, guardPoint: null, enemyShots: [], shotOriginOffset: { x: -90, y: 0 },
       returnFrom: null, returnTo: null, returnTarget: 0,
       shakePower: 0, returnPower: 0, pendingDamage: 18,
       volleyCaptured: 0, volleyMissed: 0,
       finalIndex: 0, finalDeadline: 0, hitUntil: 0, hurtUntil: 0, targetHitUntil: 0,
-      warningAnnounced: false, lastDamage: 25,
+      warningAnnounced: false, lastDamage: 25, retrySince: 0, retryReadyAt: 0,
       travel: 0, lastUpdateAt: performance.now(), bossPending: false,
       kills: 0, runStartedAt: 0, bossAt: 0, lastTimerSecond: -1,
       spawnSerial: 0, nextEnemySpawnAt: 0, nextEnemyShotAt: 0, shotSerial: 0,
@@ -592,10 +641,9 @@
     }
 
     const input = {
-      mode: 'manual', visible: false, open: false, previousOpen: false,
+      mode: 'camera', visible: false, open: false, previousOpen: false,
       target: [], drawn: [], samples: [], lastStrikeAt: -Infinity,
-      x: 0.5, y: 0.62, pointerDown: false, pointerStart: null, calibrationSince: 0,
-      pointerHand: 'Right', attackAnchor: null, lastMotion: null, lastMotionVector: null,
+      x: 0.5, y: 0.62, calibrationSince: 0,
       hands: { Left: createHand('Left', 0.32), Right: createHand('Right', 0.68) }
     };
 
@@ -693,6 +741,10 @@
       ui.sub.textContent = sub;
     }
 
+    function difficultyProfile() {
+      return DIFFICULTIES[game.difficulty] || DIFFICULTIES.normal;
+    }
+
     function updateHud() {
       const playerHp = Math.max(0, Math.round(game.playerHp));
       ui.playerHealth.style.width = `${playerHp}%`;
@@ -700,9 +752,10 @@
       ui.playerHealthTrack.setAttribute('aria-valuenow', playerHp);
       if (game.phase === 'boss') {
         const boss = game.enemies[0];
+        const profile = difficultyProfile();
         const ratio = boss ? Math.max(0, boss.hp / boss.maxHp) : 0;
         ui.targetName.textContent = 'OMEGA CORE / BOSS CLASS';
-        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)}`;
+        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / ${profile.label}`;
         ui.enemyHealths.forEach((bar, index) => {
           const segments = ui.enemyHealths.length;
           const segmentRatio = Math.max(0, Math.min(1, (ratio - index / segments) * segments));
@@ -720,13 +773,14 @@
         });
       } else {
         const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
+        const profile = difficultyProfile();
         if (game.state === 'idle') {
           ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
-          ui.enemyHp.textContent = '30 SEC / BOSS';
+          ui.enemyHp.textContent = `${profile.label} / MAX ${profile.maxIncoming}`;
         } else {
           const seconds = Math.max(0, Math.ceil((game.bossAt - performance.now()) / 1000));
           ui.targetName.textContent = `HOSTILE STREAM / BOSS IN ${seconds}s`;
-          ui.enemyHp.textContent = `${alive} ACTIVE / ${game.kills} DOWN`;
+          ui.enemyHp.textContent = `${alive} ACTIVE / ${game.kills} DOWN / ${profile.label}`;
         }
         ui.enemyHealths.forEach((bar, index) => {
           const enemy = game.enemies[index];
@@ -766,6 +820,7 @@
       ui.start.hidden = true;
       ui.calibration.hidden = true;
       ui.result.hidden = true;
+      ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
       game.phase = 'squad';
       game.playerHp = 100;
       game.enemies = [];
@@ -798,6 +853,8 @@
       game.volleyMissed = 0;
       game.warningAnnounced = false;
       game.lastDamage = 25;
+      game.retrySince = 0;
+      game.retryReadyAt = 0;
       game.travel = 0;
       game.lastUpdateAt = now;
       game.bossPending = false;
@@ -944,6 +1001,7 @@
     }
 
     function spawnEnemyShot(now) {
+      const profile = difficultyProfile();
       const alive = game.enemies
         .map((enemy, index) => enemy.hp > 0 ? index : -1)
         .filter(index => index >= 0);
@@ -965,7 +1023,7 @@
         color = portIndex;
         flight = 3500;
         catchWindow = 2100;
-        damage = 14;
+        damage = profile.bossDamage;
       } else {
         shooter = alive[game.shooterCursor % alive.length];
         game.shooterCursor = (game.shooterCursor + 1) % Math.max(1, alive.length);
@@ -978,7 +1036,7 @@
         color = (shooter + game.shotSerial) % COLORS.length;
         flight = 3300;
         catchWindow = 1900;
-        damage = 10;
+        damage = profile.squadDamage;
       }
       const origin = { x: port.x / W, y: port.y / H };
       const catchStartTravel = Math.pow((flight - catchWindow) / flight, 1.55);
@@ -1007,16 +1065,15 @@
 
     function updateEnemyFire(now) {
       if (game.state !== 'attack' || !['squad', 'boss'].includes(game.phase)) return;
-      const maxIncoming = game.phase === 'boss' ? 4 : 3;
+      const profile = difficultyProfile();
+      const maxIncoming = profile.maxIncoming;
       if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
       if (!spawnEnemyShot(now)) {
         game.nextEnemyShotAt = now + 180;
         return;
       }
-      const interval = game.phase === 'boss'
-        ? 900 + Math.random() * 300
-        : 1350 + Math.random() * 400;
-      game.nextEnemyShotAt = now + interval;
+      const [minimum, maximum] = game.phase === 'boss' ? profile.bossInterval : profile.squadInterval;
+      game.nextEnemyShotAt = now + minimum + Math.random() * (maximum - minimum);
     }
 
     function beginAttack(now) {
@@ -1149,7 +1206,7 @@
       return true;
     }
 
-    function strike(dir, start, end, now = performance.now(), handId = input.pointerHand) {
+    function strike(dir, start, end, now = performance.now(), handId = 'Right') {
       const hand = input.hands[handId]?.held ? input.hands[handId] : heldHands()[0];
       if (hand && ['attack', 'counter'].includes(game.state)) {
         throwHeld(hand, start, end, now, start.t == null || end.t == null);
@@ -1323,19 +1380,23 @@
     }
 
     function finish(won) {
-      setState(won ? 'win' : 'lose');
+      const now = performance.now();
+      setState(won ? 'win' : 'lose', now);
+      game.retrySince = 0;
+      game.retryReadyAt = now + 900;
       ui.result.hidden = false;
+      ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
       if (won) {
         const clean = game.stats.wrong === 0 && game.stats.early === 0;
         ui.resultCode.textContent = 'OMEGA ELIMINATED';
         ui.resultTitle.textContent = 'BOSS DOWN';
         ui.resultRank.textContent = clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED';
-        ui.resultText.textContent = `DAMAGE ${game.stats.damage} / MAX POWER ${Math.round(game.stats.maxPower * 100)}% / ERROR ${game.stats.wrong + game.stats.early}`;
+        ui.resultText.textContent = `${difficultyProfile().label} / DAMAGE ${game.stats.damage} / MAX POWER ${Math.round(game.stats.maxPower * 100)}% / ERROR ${game.stats.wrong + game.stats.early}`;
       } else {
         ui.resultCode.textContent = 'SESSION FAILED';
         ui.resultTitle.textContent = 'SYNC LOST';
         ui.resultRank.textContent = 'RECALIBRATION REQUIRED';
-        ui.resultText.textContent = `MISSED RETURN ${game.stats.early} / SEQUENCE ERROR ${game.stats.wrong}`;
+        ui.resultText.textContent = `${difficultyProfile().label} / MISSED RETURN ${game.stats.early} / SEQUENCE ERROR ${game.stats.wrong}`;
       }
     }
 
@@ -1432,7 +1493,11 @@
         ui.hand.classList.remove('live');
         if (game.state === 'calibrate') {
           input.calibrationSince = 0;
-          ui.calibrationNote.textContent = 'SEARCHING HAND...';
+          ui.calibrationNote.textContent = 'SEARCHING FOR 2 HANDS...';
+        }
+        if (['win', 'lose'].includes(game.state) && !ui.result.hidden) {
+          game.retrySince = 0;
+          ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
         }
         return;
       }
@@ -1446,24 +1511,54 @@
       ui.hand.classList.add('live');
 
       if (game.state === 'calibrate') {
-        if (hands.some(hand => hand.open)) {
+        if (hands.length === 2 && hands.every(hand => hand.open)) {
           if (!input.calibrationSince) input.calibrationSince = now;
           const progress = Math.min(100, Math.round((now - input.calibrationSince) / 7));
-          ui.calibrationNote.textContent = `OPEN PALM ${progress}%`;
+          ui.calibrationNote.textContent = `DUAL PALM ${progress}%`;
           if (now - input.calibrationSince >= 700) startBattle();
         } else {
           input.calibrationSince = 0;
-          ui.calibrationNote.textContent = 'OPEN YOUR PALM';
+          ui.calibrationNote.textContent = hands.length < 2 ? `HANDS ${hands.length}/2` : 'OPEN BOTH PALMS';
+        }
+        return;
+      }
+
+      if (['win', 'lose'].includes(game.state) && !ui.result.hidden) {
+        if (now < game.retryReadyAt) return;
+        if (hands.length === 2 && hands.every(hand => hand.open)) {
+          if (!game.retrySince) game.retrySince = now;
+          const progress = Math.min(100, Math.round((now - game.retrySince) / 10));
+          ui.resultGesture.textContent = `RETRY // DUAL PALM ${progress}%`;
+          if (now - game.retrySince >= 1000) startBattle();
+        } else {
+          game.retrySince = 0;
+          ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
         }
         return;
       }
 
     }
 
+    function showCalibration() {
+      input.mode = 'camera';
+      ui.mode.textContent = 'CAMERA LIVE / 15HZ';
+      ui.mode.classList.add('live');
+      ui.start.hidden = true;
+      ui.result.hidden = true;
+      ui.calibration.hidden = false;
+      input.calibrationSince = 0;
+      ui.calibrationNote.textContent = 'SEARCHING FOR 2 HANDS...';
+      ui.cameraStart.disabled = false;
+      setState('calibrate');
+    }
+
     async function startCamera() {
       ensureAudio();
+      if (landmarker && stream?.active) {
+        showCalibration();
+        return;
+      }
       ui.cameraStart.disabled = true;
-      ui.manualStart.disabled = true;
       ui.startNote.textContent = 'LOADING LANDMARK MODEL...';
       try {
         const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/+esm');
@@ -1492,38 +1587,14 @@
         });
         video.srcObject = stream;
         await video.play();
-        input.mode = 'camera';
-        ui.mode.textContent = 'CAMERA LIVE / 15HZ';
-        ui.mode.classList.add('live');
-        ui.start.hidden = true;
-        ui.calibration.hidden = false;
-        input.calibrationSince = 0;
-        setState('calibrate');
+        showCalibration();
       } catch (error) {
         console.error(error);
         ui.startNote.textContent = location.protocol === 'file:'
-          ? 'CAMERA REQUIRES LOCALHOST OR HTTPS. MANUAL MODE IS READY.'
-          : 'CAMERA LINK FAILED. MANUAL MODE IS READY.';
+          ? 'CAMERA REQUIRES HTTPS OR LOCALHOST.'
+          : 'CAMERA LINK FAILED. CAMERA ACCESS IS REQUIRED.';
         ui.cameraStart.disabled = false;
-        ui.manualStart.disabled = false;
       }
-    }
-
-    function manualMode() {
-      ensureAudio();
-      input.mode = 'manual';
-      input.visible = true;
-      handStates().forEach(hand => {
-        hand.visible = true;
-        hand.open = false;
-        hand.target = [];
-        hand.drawn = [];
-      });
-      ui.mode.textContent = 'MANUAL MODE';
-      ui.mode.classList.add('live');
-      ui.hand.textContent = 'POINTER L/R INPUT';
-      ui.hand.classList.add('live');
-      startBattle();
     }
 
     function smoothLandmarks(now) {
@@ -1582,42 +1653,15 @@
       const dy = end.y - start.y;
       const elapsed = Math.max(1, end.t - start.t);
       if (Math.hypot(dx, dy) >= 0.065 && Math.hypot(dx, dy) / elapsed >= 0.00022) {
-        strike(direction(dx, dy), start, end, now);
+        strike(direction(dx, dy), start, end, now, hand.id);
         hand.samples = [{ x: end.x, y: end.y, t: now }];
       }
     }
 
-    function manualHand(hand) {
-      const x = hand.x;
-      const y = hand.y;
-      const open = false;
-      const points = Array.from({ length: 21 }, () => ({ x, y, z: 0 }));
-      points[0] = { x, y: y + 0.12, z: 0 };
-      const fingers = [
-        [1, -0.055, 0.035, -0.02, -0.032],
-        [5, -0.04, 0, -0.008, -0.048],
-        [9, 0, -0.01, 0, -0.052],
-        [13, 0.04, 0, 0.008, -0.048],
-        [17, 0.068, 0.02, 0.014, -0.041]
-      ];
-      for (const [base, ox, oy, dx, dy] of fingers) {
-        for (let i = 0; i < 4; i++) {
-          const step = open ? i : Math.min(i, 1.25);
-          points[base + i] = {
-            x: x + ox + dx * step,
-            y: y + oy + dy * step + (open ? 0 : Math.max(0, i - 1) * 0.018),
-            z: 0
-          };
-        }
-      }
-      return points;
-    }
-
     function handPoints(handId = 'Right') {
       const hand = input.hands[handId];
-      if (!hand?.visible) return [];
-      const source = input.mode === 'camera' && hand.drawn.length === 21 ? hand.drawn : manualHand(hand);
-      return source.map(point => ({ x: point.x * W, y: point.y * H }));
+      if (!hand?.visible || hand.drawn.length !== 21) return [];
+      return hand.drawn.map(point => ({ x: point.x * W, y: point.y * H }));
     }
 
     function shotPosition(now, shot) {
@@ -1946,7 +1990,7 @@
       pulseBall(shot.x, shot.y, shot.radius, now * 0.016, enemyShot.color);
     }
 
-    function drawCatchMarker(shot, remaining, now, order = 1) {
+    function drawCatchMarker(shot, now) {
       const pulse = 0.5 + Math.sin(now * 0.02) * 0.5;
       const size = 88 + pulse * 10;
       const color = '#72f1b8';
@@ -1958,19 +2002,11 @@
       ctx.lineWidth = 1;
       ctx.strokeRect(shot.x - size / 2 + 7, shot.y - size / 2 + 7, size - 14, size - 14);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = '#000207';
-      ctx.fillRect(shot.x - 36, shot.y - 19, 72, 38);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(shot.x - 36, shot.y - 19, 72, 38);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '900 24px ui-monospace, monospace';
+      ctx.fillStyle = color;
+      ctx.font = '900 12px ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${Math.max(0, remaining / 1000).toFixed(1)}s`, shot.x, shot.y + 1);
-      ctx.fillStyle = color;
-      ctx.font = '800 11px ui-monospace, monospace';
-      ctx.fillText(`CATCH ${order}`, shot.x, shot.y - size / 2 - 8);
+      ctx.fillText('CATCH', shot.x, shot.y - size / 2 - 9);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
@@ -2090,7 +2126,7 @@
           if (!shot) continue;
           drawIncomingShot(enemyShot, shot, now, false);
           const remaining = enemyShot.flight - (now - enemyShot.born);
-          if (remaining >= 0 && remaining <= enemyShot.catchWindow) drawCatchMarker(shot, remaining, now, enemyShot.order);
+          if (remaining >= 0 && remaining <= enemyShot.catchWindow) drawCatchMarker(shot, now);
         }
       }
 
@@ -2373,81 +2409,29 @@
       requestAnimationFrame(frame);
     }
 
-    function eventPoint(event) {
-      const rect = canvas.getBoundingClientRect();
-      return {
-        x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-        y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
-      };
-    }
-
-    stage.addEventListener('pointerdown', event => {
-      if (!['advance','encounter','intro','read','attack','counter','recover','finalIntro','final'].includes(game.state)) return;
-      input.pointerDown = true;
-      input.pointerStart = { ...eventPoint(event), t: performance.now() };
-      input.pointerHand = input.pointerStart.x < 0.5 ? 'Left' : 'Right';
-      const hand = input.hands[input.pointerHand];
-      hand.x = input.pointerStart.x;
-      hand.y = input.pointerStart.y;
-      hand.visible = true;
-      input.visible = true;
-      stage.setPointerCapture?.(event.pointerId);
-    });
-
-    stage.addEventListener('pointermove', event => {
-      if (!input.pointerDown) return;
-      const point = eventPoint(event);
-      const hand = input.hands[input.pointerHand];
-      hand.x = point.x;
-      hand.y = point.y;
-      trackAttackMotion(hand, point, performance.now(), false);
-    });
-
-    stage.addEventListener('pointerup', event => {
-      if (!input.pointerDown || !input.pointerStart) return;
-      const now = performance.now();
-      const end = { ...eventPoint(event), t: now };
-      const start = input.pointerStart;
-      const hand = input.hands[input.pointerHand];
-      hand.x = end.x;
-      hand.y = end.y;
-      input.pointerDown = false;
-      input.pointerStart = null;
-      tryFuseHeldShots(now);
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      if (Math.hypot(dx,dy) >= 0.035) strike(direction(dx,dy), start, end, now, input.pointerHand);
-    });
-
-    stage.addEventListener('pointercancel', () => {
-      input.pointerDown = false;
-      input.pointerStart = null;
-    });
-
-    window.addEventListener('keydown', event => {
-      const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
-      if (map[event.key]) {
-        event.preventDefault();
-        const d = map[event.key];
-        const v = { left:[-0.18,0], right:[0.18,0], up:[0,-0.18], down:[0,0.18] }[d];
-        const hand = heldHands()[0];
-        const centerX = hand?.x || 0.5;
-        const centerY = hand?.y || 0.75;
-        strike(d, { x:centerX-v[0]/2, y:centerY-v[1]/2 }, { x:centerX+v[0]/2, y:centerY+v[1]/2 }, performance.now(), hand?.id || input.pointerHand);
-      } else if (event.key.toLowerCase() === 'r') startBattle();
-      else if (event.key === 'Enter' && game.state === 'idle') manualMode();
-    });
-
     ui.cameraStart.addEventListener('click', startCamera);
-    ui.manualStart.addEventListener('click', manualMode);
-    ui.fallback.addEventListener('click', manualMode);
-    ui.retry.addEventListener('click', startBattle);
-    ui.reset.addEventListener('click', startBattle);
+    ui.difficultyButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        game.difficulty = button.dataset.difficulty;
+        ui.difficultyButtons.forEach(item => {
+          const selected = item === button;
+          item.classList.toggle('selected', selected);
+          item.setAttribute('aria-pressed', String(selected));
+        });
+        const profile = difficultyProfile();
+        updateHud();
+        say(`${profile.label} MODE SELECTED`, `MAX ${profile.maxIncoming} PULSES`);
+      });
+    });
     ui.toTitle.addEventListener('click', () => {
       ui.result.hidden = true;
+      ui.calibration.hidden = true;
       ui.start.hidden = false;
+      ui.cameraStart.disabled = false;
+      game.retrySince = 0;
+      game.retryReadyAt = 0;
       setState('idle');
-      say('SYSTEM STANDBY', 'CAMERA LINK または MANUAL MODE を選択');
+      say('SELECT DIFFICULTY', '難易度を選び、画面に向けて両手を構える');
     });
 
     window.addEventListener('beforeunload', () => {
