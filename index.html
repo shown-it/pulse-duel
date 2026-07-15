@@ -465,7 +465,7 @@
           <p class="tagline">ADVANCE. CATCH. RETURN.</p>
           <p class="lead">
             ヴェクター空間を前進し続け、次々出現する敵の連続弾をキャッチ。<br>
-            両手の弾を接触させると合体し、3体貫通の強力弾に。30体撃破でボスが出現します。
+            両手の弾を接触させると合体し、3体貫通の強力弾に。30秒間走り抜けるとボスが出現します。
           </p>
           <div class="buttons">
             <button class="button" id="cameraStart">CAMERA LINK</button>
@@ -552,7 +552,7 @@
     const HAND_IDS = ['Left', 'Right'];
     const THROW_DISTANCE = 0.13;
     const THROW_SPEED = 0.0003;
-    const KILL_GOAL = 30;
+    const RUN_DURATION = 30000;
     const MAX_ACTIVE_ENEMIES = 8;
     const FUSION_DISTANCE = 82;
 
@@ -574,7 +574,8 @@
       finalIndex: 0, finalDeadline: 0, hitUntil: 0, hurtUntil: 0, targetHitUntil: 0,
       warningAnnounced: false, lastDamage: 25,
       travel: 0, lastUpdateAt: performance.now(), bossPending: false,
-      kills: 0, spawnSerial: 0, nextEnemySpawnAt: 0, nextEnemyShotAt: 0, shotSerial: 0,
+      kills: 0, runStartedAt: 0, bossAt: 0, lastTimerSecond: -1,
+      spawnSerial: 0, nextEnemySpawnAt: 0, nextEnemyShotAt: 0, shotSerial: 0,
       fusionSerial: 0, bossPortIndex: 0,
       attackers: [], attackOffsets: [], playerShots: [], exchangeClosing: false,
       stats: { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 }
@@ -584,6 +585,7 @@
       return {
         id, visible: false, open: false, previousOpen: false,
         target: [], drawn: [], samples: [], x, y: 0.64,
+        lastSeenAt: -Infinity,
         held: null, shakePower: 0, guardAt: -Infinity, guardPoint: null,
         lastStrikeAt: -Infinity, attackAnchor: null, lastMotion: null, lastMotionVector: null
       };
@@ -601,6 +603,7 @@
     let stream = null;
     let lastVideoTime = -1;
     let lastInference = 0;
+    let lastSmoothAt = performance.now();
     let audio = null;
     const strikes = [];
     const particles = [];
@@ -719,10 +722,11 @@
         const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
         if (game.state === 'idle') {
           ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
-          ui.enemyHp.textContent = '30 KILLS / BOSS';
+          ui.enemyHp.textContent = '30 SEC / BOSS';
         } else {
-          ui.targetName.textContent = `HOSTILE STREAM / ${Math.min(game.kills, KILL_GOAL)}/${KILL_GOAL}`;
-          ui.enemyHp.textContent = `${alive} ACTIVE / ${Math.min(game.kills, KILL_GOAL)} DOWN`;
+          const seconds = Math.max(0, Math.ceil((game.bossAt - performance.now()) / 1000));
+          ui.targetName.textContent = `HOSTILE STREAM / BOSS IN ${seconds}s`;
+          ui.enemyHp.textContent = `${alive} ACTIVE / ${game.kills} DOWN`;
         }
         ui.enemyHealths.forEach((bar, index) => {
           const enemy = game.enemies[index];
@@ -766,6 +770,9 @@
       game.playerHp = 100;
       game.enemies = [];
       game.kills = 0;
+      game.runStartedAt = now;
+      game.bossAt = now + RUN_DURATION;
+      game.lastTimerSecond = -1;
       game.spawnSerial = 0;
       game.nextEnemySpawnAt = now;
       game.nextEnemyShotAt = now + 1100;
@@ -821,13 +828,13 @@
         game.enemies = [];
         game.nextEnemySpawnAt = now + (firstRun ? 300 : 0);
         game.nextEnemyShotAt = now + (firstRun ? 1500 : 900);
-        say(firstRun ? 'FORWARD DRIVE ONLINE' : 'FORWARD DRIVE CONTINUES', 'HOSTILES STREAMING / 30 KILLS TO OMEGA');
+        say(firstRun ? 'FORWARD DRIVE ONLINE' : 'FORWARD DRIVE CONTINUES', 'SURVIVE 30 SEC TO OMEGA');
         game.nextAt = Infinity;
       }
     }
 
     function spawnStreamEnemy(now) {
-      if (game.phase !== 'squad' || game.kills >= KILL_GOAL) return false;
+      if (game.phase !== 'squad') return false;
       const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
       if (alive >= MAX_ACTIVE_ENEMIES) return false;
       const slot = game.enemies.findIndex(enemy => enemy.hp <= 0);
@@ -847,7 +854,7 @@
     }
 
     function maintainEnemyStream(now) {
-      if (game.phase !== 'squad' || game.state !== 'attack' || game.kills >= KILL_GOAL) return;
+      if (game.phase !== 'squad' || game.state !== 'attack') return;
       if (now < game.nextEnemySpawnAt) return;
       const spawned = spawnStreamEnemy(now);
       game.nextEnemySpawnAt = now + (spawned ? 720 + Math.random() * 380 : 280);
@@ -1000,15 +1007,15 @@
 
     function updateEnemyFire(now) {
       if (game.state !== 'attack' || !['squad', 'boss'].includes(game.phase)) return;
-      const maxIncoming = game.phase === 'boss' ? 8 : 6;
+      const maxIncoming = game.phase === 'boss' ? 4 : 3;
       if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
       if (!spawnEnemyShot(now)) {
         game.nextEnemyShotAt = now + 180;
         return;
       }
       const interval = game.phase === 'boss'
-        ? 500 + Math.random() * 180
-        : 760 + Math.random() * 260;
+        ? 900 + Math.random() * 300
+        : 1350 + Math.random() * 400;
       game.nextEnemyShotAt = now + interval;
     }
 
@@ -1192,13 +1199,12 @@
         playerShot.to = { x: pose.x, y: pose.y };
       }
       if (playerShot.fused && game.phase === 'squad') {
-        const remainingKills = Math.max(0, KILL_GOAL - game.kills);
         const victims = [
           playerShot.targetIndex,
           ...game.enemies
             .map((unit, index) => unit.hp > 0 && index !== playerShot.targetIndex ? index : -1)
             .filter(index => index >= 0)
-        ].slice(0, Math.min(3, remainingKills));
+        ].slice(0, 3);
         victims.forEach((index, order) => {
           const unit = game.enemies[index];
           if (!unit || unit.hp <= 0) return;
@@ -1213,7 +1219,7 @@
         game.targetHitUntil = now + 520;
         game.nextEnemySpawnAt = Math.min(game.nextEnemySpawnAt, now + 420);
         updateHud();
-        say(`FUSION PENETRATION / ${victims.length} UNITS DOWN`, `TOTAL ${Math.min(game.kills, KILL_GOAL)}/${KILL_GOAL}`);
+        say(`FUSION PENETRATION / ${victims.length} UNITS DOWN`, `TOTAL ${game.kills} / BOSS TIMER ACTIVE`);
         tone(52, 0.34, 0.06);
         setTimeout(() => tone(420, 0.24, 0.045), 90);
         maybeFinishExchange(now);
@@ -1229,7 +1235,7 @@
       tone(110, 0.13, 0.045);
       if (enemy.hp <= 0) {
         if (!enemy.boss) {
-          game.kills = Math.min(KILL_GOAL, game.kills + 1);
+          game.kills += 1;
           game.nextEnemySpawnAt = Math.min(game.nextEnemySpawnAt, now + 420);
           updateHud();
         }
@@ -1240,7 +1246,7 @@
         setTimeout(() => tone(180, 0.18, 0.04), 70);
         setTimeout(() => tone(45, 0.32, 0.05), 140);
         const alive = game.enemies.filter(unit => unit.hp > 0).length;
-        say(enemy.boss ? 'OMEGA CORE HIT' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `TOTAL ${game.kills}/${KILL_GOAL} / ${alive} ACTIVE`);
+        say(enemy.boss ? 'OMEGA CORE HIT' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `TOTAL ${game.kills} / ${alive} ACTIVE`);
       } else {
         burst(target.x, target.y, Math.round(26 + playerShot.power * 38));
         say(`${playerShot.handId.toUpperCase()} RETURN / ${playerShot.damage} DAMAGE`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `UNIT ${playerShot.targetIndex + 1} HP ${Math.round(enemy.hp)}`);
@@ -1257,11 +1263,6 @@
 
     function maybeFinishExchange(now) {
       if (game.playerHp <= 0) return finish(false);
-      if (game.phase === 'squad' && game.kills >= KILL_GOAL) {
-        if (game.playerShots.some(shot => !shot.resolved)) return;
-        beginBossWarning(now);
-        return;
-      }
       const boss = game.phase === 'boss' ? game.enemies[0] : null;
       if (boss && boss.hp <= 0) {
         game.enemyShots = [];
@@ -1281,7 +1282,7 @@
       clearHandActions();
       setState('bossWarning', now);
       updateHud();
-      say('30 HOSTILES ELIMINATED', 'UNKNOWN SIGNAL DETECTED...');
+      say('30 SECOND RUN COMPLETE', 'UNKNOWN SIGNAL DETECTED...');
       game.nextAt = now + 3000;
     }
 
@@ -1342,6 +1343,17 @@
       const updateDelta = Math.max(0, Math.min(50, now - game.lastUpdateAt));
       game.lastUpdateAt = now;
       if (game.phase === 'squad' || game.phase === 'boss-warning') game.travel += updateDelta * 0.00135;
+      if (game.phase === 'squad' && game.state === 'attack') {
+        const timerSecond = Math.max(0, Math.ceil((game.bossAt - now) / 1000));
+        if (timerSecond !== game.lastTimerSecond) {
+          game.lastTimerSecond = timerSecond;
+          updateHud();
+        }
+        if (now >= game.bossAt) {
+          beginBossWarning(now);
+          return;
+        }
+      }
       updatePlayerShots(now);
       if (game.state === 'attack') {
         maintainEnemyStream(now);
@@ -1385,8 +1397,7 @@
       const detected = result?.landmarks || [];
       const used = new Set();
       handStates().forEach(hand => {
-        hand.visible = false;
-        hand.target = [];
+        hand.detected = false;
       });
 
       detected.slice(0, 2).forEach((raw, index) => {
@@ -1398,12 +1409,19 @@
         if (used.has(id)) id = id === 'Left' ? 'Right' : 'Left';
         used.add(id);
         const hand = input.hands[id];
+        hand.detected = true;
         hand.visible = true;
+        hand.lastSeenAt = now;
         hand.target = raw.map(point => ({ x: 1 - point.x, y: point.y, z: point.z }));
-        hand.x = hand.target[9].x;
-        hand.y = hand.target[9].y;
         hand.previousOpen = hand.open;
         hand.open = openPalm(hand.target);
+      });
+
+      handStates().forEach(hand => {
+        if (hand.detected || now - hand.lastSeenAt <= 180) return;
+        hand.visible = false;
+        hand.target = [];
+        hand.drawn = [];
       });
 
       const hands = visibleHands();
@@ -1440,30 +1458,6 @@
         return;
       }
 
-      tryFuseHeldShots(now);
-      hands.forEach(hand => {
-        if (hand.held) trackAttackMotion(hand, { x: hand.x, y: hand.y, t: now }, now, true);
-      });
-
-      if (game.state !== 'final') {
-        hands.forEach(hand => { hand.samples.length = 0; });
-        return;
-      }
-
-      const hand = hands[0];
-      const motionPoint = { x: hand.x, y: hand.y, t: now };
-      hand.samples.push(motionPoint);
-      hand.samples = hand.samples.filter(sample => now - sample.t <= 420);
-      if (hand.samples.length < 2 || now - input.lastStrikeAt < 260) return;
-      const start = hand.samples[0];
-      const end = hand.samples.at(-1);
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const elapsed = Math.max(1, end.t - start.t);
-      if (Math.hypot(dx, dy) >= 0.065 && Math.hypot(dx, dy) / elapsed >= 0.00022) {
-        strike(direction(dx, dy), start, end, now);
-        hand.samples = [{ x: end.x, y: end.y, t: now }];
-      }
     }
 
     async function startCamera() {
@@ -1499,7 +1493,7 @@
         video.srcObject = stream;
         await video.play();
         input.mode = 'camera';
-        ui.mode.textContent = 'CAMERA LIVE / 10HZ';
+        ui.mode.textContent = 'CAMERA LIVE / 15HZ';
         ui.mode.classList.add('live');
         ui.start.hidden = true;
         ui.calibration.hidden = false;
@@ -1532,7 +1526,11 @@
       startBattle();
     }
 
-    function smoothLandmarks() {
+    function smoothLandmarks(now) {
+      const dt = Math.max(8, Math.min(40, now - lastSmoothAt));
+      lastSmoothAt = now;
+      const blend = 1 - Math.exp(-dt / 48);
+      const deadzone = 0.0012;
       handStates().forEach(hand => {
         if (input.mode !== 'camera' || hand.target.length !== 21) {
           hand.drawn = [];
@@ -1540,14 +1538,53 @@
         }
         if (hand.drawn.length !== 21) {
           hand.drawn = hand.target.map(point => ({ ...point }));
+          hand.x = hand.drawn[9].x;
+          hand.y = hand.drawn[9].y;
           return;
         }
         for (let i = 0; i < 21; i++) {
-          hand.drawn[i].x += (hand.target[i].x - hand.drawn[i].x) * 0.38;
-          hand.drawn[i].y += (hand.target[i].y - hand.drawn[i].y) * 0.38;
-          hand.drawn[i].z += (hand.target[i].z - hand.drawn[i].z) * 0.38;
+          for (const axis of ['x', 'y', 'z']) {
+            const delta = hand.target[i][axis] - hand.drawn[i][axis];
+            const adjusted = Math.abs(delta) <= deadzone ? 0 : delta - Math.sign(delta) * deadzone;
+            hand.drawn[i][axis] += adjusted * blend;
+          }
         }
+        hand.x = hand.drawn[9].x;
+        hand.y = hand.drawn[9].y;
       });
+      const hands = visibleHands();
+      if (hands.length) {
+        input.x = hands[0].x;
+        input.y = hands[0].y;
+      }
+    }
+
+    function updateSmoothedHandControls(now) {
+      if (input.mode !== 'camera' || game.state === 'calibrate') return;
+      const hands = visibleHands();
+      if (!hands.length) return;
+      tryFuseHeldShots(now);
+      hands.forEach(hand => {
+        if (hand.held) trackAttackMotion(hand, { x: hand.x, y: hand.y, t: now }, now, true);
+      });
+      if (game.state !== 'final') {
+        hands.forEach(hand => { hand.samples.length = 0; });
+        return;
+      }
+      const hand = hands[0];
+      const motionPoint = { x: hand.x, y: hand.y, t: now };
+      hand.samples.push(motionPoint);
+      hand.samples = hand.samples.filter(sample => now - sample.t <= 420);
+      if (hand.samples.length < 2 || now - input.lastStrikeAt < 260) return;
+      const start = hand.samples[0];
+      const end = hand.samples.at(-1);
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const elapsed = Math.max(1, end.t - start.t);
+      if (Math.hypot(dx, dy) >= 0.065 && Math.hypot(dx, dy) / elapsed >= 0.00022) {
+        strike(direction(dx, dy), start, end, now);
+        hand.samples = [{ x: end.x, y: end.y, t: now }];
+      }
     }
 
     function manualHand(hand) {
@@ -2304,14 +2341,15 @@
         fpsAt = now;
       }
 
-      if (landmarker && video.readyState >= 2 && now - lastInference >= 95 && video.currentTime !== lastVideoTime) {
+      if (landmarker && video.readyState >= 2 && now - lastInference >= 66 && video.currentTime !== lastVideoTime) {
         lastInference = now;
         lastVideoTime = video.currentTime;
         try { processLandmarks(landmarker.detectForVideo(video, now), now); }
         catch (error) { console.warn('Landmark frame skipped', error); }
       }
 
-      smoothLandmarks();
+      smoothLandmarks(now);
+      updateSmoothedHandControls(now);
       update(now);
       const hurt = Math.max(0, (game.hurtUntil - now) / 420);
       if (hurt > 0) {
