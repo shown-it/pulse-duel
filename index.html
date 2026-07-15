@@ -564,6 +564,8 @@
     const THROW_SPEED = 0.0002;
     const RUN_DURATION = 30000;
     const MAX_ACTIVE_ENEMIES = 5;
+    const BOSS_BASE_HP = 180;
+    const BOSS_HP_PER_LOOP = 60;
     const FUSION_DISTANCE = 82;
     const BATTLE_PROFILE = {
       maxIncoming: 2,
@@ -783,6 +785,10 @@
       return Math.min(MAX_ACTIVE_ENEMIES, 1 + Math.max(1, game.loop));
     }
 
+    function bossMaxHp(loop = game.loop) {
+      return BOSS_BASE_HP + Math.max(0, loop - 1) * BOSS_HP_PER_LOOP;
+    }
+
     function loopFireScale() {
       return Math.max(0.42, Math.pow(0.82, Math.max(0, game.loop - 1)));
     }
@@ -814,7 +820,7 @@
         const boss = game.enemies[0];
         const ratio = boss ? Math.max(0, boss.hp / boss.maxHp) : 0;
         ui.targetName.textContent = `OMEGA CORE / LOOP ${game.loop}`;
-        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / MAX ${maxIncomingCount()}`;
+        ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / ${boss?.maxHp || bossMaxHp()} HP · MAX ${maxIncomingCount()}`;
         ui.enemyHealths.forEach((bar, index) => {
           const segments = ui.enemyHealths.length;
           const segmentRatio = Math.max(0, Math.min(1, (ratio - index / segments) * segments));
@@ -1408,7 +1414,7 @@
       clearHandActions();
       setState('loopTransition', now);
       updateHud();
-      say(`LOOP ${completedLoop} COMPLETE`, `LOOP ${game.loop} / ${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} PULSES`);
+      say(`LOOP ${completedLoop} COMPLETE`, `LOOP ${game.loop} / BOSS ${bossMaxHp()} HP / MAX ${maxIncomingCount()} PULSES`);
       game.nextAt = now + 2200;
       tone(120, 0.18, 0.05);
       setTimeout(() => tone(480, 0.22, 0.045), 120);
@@ -1441,7 +1447,8 @@
 
     function spawnBoss(now) {
       game.phase = 'boss';
-      game.enemies = [{ hp: 180, maxHp: 180, phase: 0.8, boss: true }];
+      const maxHp = bossMaxHp();
+      game.enemies = [{ hp: maxHp, maxHp, phase: 0.8, boss: true }];
       game.activeEnemy = 0;
       game.shooterCursor = 0;
       game.enemyShots = [];
@@ -1449,7 +1456,7 @@
       clearHandActions();
       updateHud();
       setState('bossIntro', now);
-      say(`OMEGA CORE ONLINE / LOOP ${game.loop}`, `BOSS HP 180 / MAX ${maxIncomingCount()} PULSES`);
+      say(`OMEGA CORE ONLINE / LOOP ${game.loop}`, `BOSS HP ${maxHp} / MAX ${maxIncomingCount()} PULSES`);
       game.nextAt = now + 1450;
       tone(48, 0.55, 0.06);
       setTimeout(() => tone(96, 0.35, 0.04), 130);
@@ -2158,7 +2165,7 @@
           if ((pose.depth ?? 1) > 0.46) {
             ctx.fillStyle = '#ff5570';
             ctx.font = '700 12px ui-monospace, monospace';
-            ctx.fillText(`BOSS_OMEGA / HP ${Math.ceil(enemy.hp)}`, pose.x + 104 * pose.scale, pose.y - 82 * pose.scale);
+            ctx.fillText(`BOSS_OMEGA / HP ${Math.ceil(enemy.hp)} / ${enemy.maxHp}`, pose.x + 104 * pose.scale, pose.y - 82 * pose.scale);
           }
           return;
         }
@@ -2451,7 +2458,7 @@
       ctx.fillText('WARNING', W * 0.5, H * 0.44);
       ctx.fillStyle = '#ff5570';
       ctx.font = '700 16px ui-monospace, monospace';
-      ctx.fillText('MASSIVE HOSTILE SIGNATURE / OMEGA CLASS', W * 0.5, H * 0.56);
+      ctx.fillText(`OMEGA CLASS / CORE HP ${bossMaxHp()}`, W * 0.5, H * 0.56);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
@@ -2476,7 +2483,7 @@
       ctx.fillText(`LOOP ${game.loop}`, W * 0.5, H * 0.47);
       ctx.fillStyle = '#72f1b8';
       ctx.font = '800 17px ui-monospace, monospace';
-      ctx.fillText(`UNITS ${activeEnemyLimit()} / INCOMING MAX ${maxIncomingCount()}`, W * 0.5, H * 0.57);
+      ctx.fillText(`UNITS ${activeEnemyLimit()} / BOSS HP ${bossMaxHp()} / INCOMING MAX ${maxIncomingCount()}`, W * 0.5, H * 0.57);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
