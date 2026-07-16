@@ -615,9 +615,10 @@
         <div class="card">
           <p class="eyebrow">MOTION DUEL PROTOTYPE</p>
           <h1>PULSE//DUEL</h1>
-          <p class="tagline">ADVANCE. CATCH. RETURN.</p>
+          <p class="tagline">ADVANCE. RETURN. OVERDRIVE.</p>
           <p class="lead">
-            画面に向けて両手を構え、奥から来る弾をキャッチ。<br>
+            画面に向けて両手を構え、奥から来る弾へ手を当ててRETURN。<br>
+            柔らかく受け止めてから投げると、強力なPOWER RETURNになります。<br>
             1周目は敵2機から開始。ボスを倒すたびに敵と弾が増えます。
           </p>
           <p class="eyebrow">LOOP 1 // 2 UNITS // MAX 2 PULSES</p>
@@ -668,7 +669,7 @@
     </main>
 
     <footer class="footer">
-      <span>CAMERA + DUAL HANDS ONLY　CATCH INCOMING PULSES　FLICK TO RETURN　EACH LOOP +1 PULSE</span>
+      <span>CAMERA + DUAL HANDS ONLY　DIRECT RETURN OR SOFT CATCH　FLICK FOR POWER　EACH LOOP +1 PULSE</span>
     </footer>
   </div>
 
@@ -716,6 +717,9 @@
     const HAND_IDS = ['Left', 'Right'];
     const THROW_DISTANCE = 0.045;
     const THROW_SPEED = 0.0001;
+    const DIRECT_RETURN_DISTANCE = 0.032;
+    const DIRECT_RETURN_SPEED = 0.00022;
+    const DIRECT_RETURN_WINDOW = 180;
     const RUN_DURATION = 30000;
     const MAX_ACTIVE_ENEMIES = 5;
     const BOSS_BASE_HP = 180;
@@ -759,6 +763,7 @@
         id, visible: false, open: false, previousOpen: false,
         calibrationSince: 0, calibrationLocked: false,
         target: [], drawn: [], samples: [], x, y: 0.64,
+        interceptSamples: [],
         lastSeenAt: -Infinity,
         held: null, shakePower: 0, guardAt: -Infinity, guardPoint: null,
         lastStrikeAt: -Infinity, attackAnchor: null, lastMotion: null, lastMotionVector: null
@@ -916,6 +921,7 @@
         hand.lastMotionVector = null;
         hand.lastStrikeAt = -Infinity;
         hand.samples.length = 0;
+        hand.interceptSamples.length = 0;
       });
     }
 
@@ -1341,7 +1347,7 @@
       game.exchangeClosing = false;
       setState('attack', now);
       game.nextEnemyShotAt = now;
-      say(game.phase === 'boss' ? 'OMEGA BARRAGE INBOUND' : 'PULSE STREAM INBOUND', '弾の接近に合わせてCATCH');
+      say(game.phase === 'boss' ? 'OMEGA BARRAGE INBOUND' : 'PULSE STREAM INBOUND', '弾の接近に合わせてRETURN');
       game.nextAt = Infinity;
       updateEnemyFire(now);
       tone(380, 0.05);
@@ -1421,6 +1427,8 @@
       hand.lastStrikeAt = now;
       const held = hand.held;
       const isFused = !!held.fused;
+      const isPowerReturn = !isFused && !!held.softCatch;
+      const isDirectReturn = !isFused && !!held.directReturn;
       let targetIndex = held.enemyIndex;
       if (!game.enemies[targetIndex] || game.enemies[targetIndex].hp <= 0) {
         targetIndex = game.enemies.findIndex(enemy => enemy.hp > 0);
@@ -1434,7 +1442,11 @@
         ? handStates().filter(item => item.held?.fusionId === held.fusionId)
         : [hand];
       const power = Math.max(...fusionHands.map(item => item.shakePower));
-      const damage = isFused ? Math.round(90 + power * 70) : Math.round(18 + power * 42);
+      const damage = isFused
+        ? Math.round(90 + power * 70)
+        : isPowerReturn
+          ? Math.round(36 + power * 54)
+          : Math.round(18 + power * 24);
       const pose = enemyPose(now, targetIndex);
       const launchPoint = isFused ? fusionCenter() : { x: end.x * W, y: end.y * H };
       game.playerShots.push({
@@ -1448,6 +1460,7 @@
         color: held.color,
         handId: hand.id,
         fused: isFused,
+        strong: isPowerReturn,
         resolved: false
       });
       fusionHands.forEach(item => {
@@ -1458,10 +1471,18 @@
       });
       game.stats.strikes += 1;
       game.stats.maxPower = Math.max(game.stats.maxPower, power);
-      addScore(isFused ? 120 : 50);
+      addScore(isFused ? 120 : isPowerReturn ? 100 : 50);
       say(`${hand.id.toUpperCase()} PULSE RETURNED / ${damage} DMG`,
-        isFused ? 'RETURN CONFIRMED' : (heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`));
-      tone(isFused ? 860 : 520 + power * 260, isFused ? 0.18 : 0.09, isFused ? 0.055 : 0.04);
+        isFused
+          ? 'RETURN CONFIRMED'
+          : isPowerReturn
+            ? `POWER RETURN / CHARGE ${Math.round(power * 100)}%`
+            : isDirectReturn
+              ? 'DIRECT RETURN'
+              : (heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`));
+      tone(isFused ? 860 : isPowerReturn ? 720 + power * 260 : 520 + power * 180,
+        isFused ? 0.18 : isPowerReturn ? 0.14 : 0.09,
+        isFused ? 0.055 : isPowerReturn ? 0.05 : 0.04);
       return true;
     }
 
@@ -1544,6 +1565,7 @@
       }
       enemy.hp = Math.max(0, enemy.hp - playerShot.damage);
       game.stats.damage += playerShot.damage;
+      const effectPower = Math.min(1, playerShot.power + (playerShot.strong ? 0.45 : 0));
       game.hitUntil = now + (enemy.boss ? 280 : 150);
       game.targetHitUntil = now + (enemy.boss ? 620 : 380);
       game.returnTarget = playerShot.targetIndex;
@@ -1567,11 +1589,11 @@
         say(enemy.boss ? 'OMEGA CORE DESTROYED' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? 'CORE COLLAPSE DETECTED' : `TOTAL ${game.kills} / ${alive} ACTIVE`);
       } else {
         if (enemy.boss) {
-          destructionEffects.push({ x: target.x, y: target.y, born: now, bossImpact: true, power: playerShot.power });
-          burst(target.x, target.y, Math.round(70 + playerShot.power * 70));
-          setTimeout(() => tone(420 + playerShot.power * 260, 0.12, 0.032), 55);
+          destructionEffects.push({ x: target.x, y: target.y, born: now, bossImpact: true, power: effectPower });
+          burst(target.x, target.y, Math.round(70 + effectPower * 70));
+          setTimeout(() => tone(420 + effectPower * 260, 0.12, 0.032), 55);
         } else {
-          burst(target.x, target.y, Math.round(26 + playerShot.power * 38));
+          burst(target.x, target.y, Math.round(26 + effectPower * 38));
         }
         say(`${playerShot.handId.toUpperCase()} RETURN / ${playerShot.damage} DAMAGE`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `UNIT ${playerShot.targetIndex + 1} HP ${Math.round(enemy.hp)}`);
       }
@@ -1706,7 +1728,7 @@
         ui.resultCode.textContent = 'SESSION FAILED';
         ui.resultTitle.textContent = 'SYNC LOST';
         ui.resultRank.textContent = `SCORE ${Math.round(game.score).toLocaleString()}`;
-        ui.resultText.textContent = `LOOP ${game.loop} / ${game.kills} DOWN / ${game.stats.guards} CATCH`;
+        ui.resultText.textContent = `LOOP ${game.loop} / ${game.kills} DOWN / ${game.stats.guards} INTERCEPT`;
       }
     }
 
@@ -1997,7 +2019,12 @@
       if (!hands.length) return;
       tryFuseHeldShots(now);
       hands.forEach(hand => {
-        if (hand.held) trackAttackMotion(hand, { x: hand.x, y: hand.y, t: now }, now, true);
+        const motionPoint = { x: hand.x, y: hand.y, t: now };
+        if (!hand.held && game.state === 'attack') {
+          hand.interceptSamples.push(motionPoint);
+          hand.interceptSamples = hand.interceptSamples.filter(sample => now - sample.t <= DIRECT_RETURN_WINDOW);
+        } else hand.interceptSamples.length = 0;
+        if (hand.held) trackAttackMotion(hand, motionPoint, now, true);
       });
       if (game.state !== 'final') {
         hands.forEach(hand => { hand.samples.length = 0; });
@@ -2049,6 +2076,16 @@
       return Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t));
     }
 
+    function directReturnMotion(hand, now) {
+      const samples = hand.interceptSamples.filter(sample => now - sample.t <= DIRECT_RETURN_WINDOW);
+      if (samples.length < 2) return null;
+      const start = samples[0];
+      const end = samples.at(-1);
+      const metrics = throwMetrics(start, end, now);
+      if (metrics.duration < 70 || metrics.distance < DIRECT_RETURN_DISTANCE || metrics.speed < DIRECT_RETURN_SPEED) return null;
+      return { start, end, ...metrics };
+    }
+
     function tryHandBlock(now) {
       for (const enemyShot of game.enemyShots) {
         if (enemyShot.resolved) continue;
@@ -2067,6 +2104,7 @@
           const jointHit = points.some(point => Math.hypot(shot.x - point.x, shot.y - point.y) <= jointRadius);
           const boneHit = HAND_BONES.some(([a, b]) => pointSegmentDistance(shot, points[a], points[b]) <= boneRadius);
           if (!jointHit && !boneHit) continue;
+          const directMotion = now - hand.lastStrikeAt >= 230 ? directReturnMotion(hand, now) : null;
           enemyShot.resolved = true;
           enemyShot.captured = true;
           enemyShot.capturedBy = hand.id;
@@ -2079,16 +2117,24 @@
             enemyIndex: enemyShot.shooter,
             color: enemyShot.color,
             capturedAt: now,
-            lastPoint: { x: shot.x, y: shot.y }
+            lastPoint: { x: shot.x, y: shot.y },
+            softCatch: !directMotion,
+            directReturn: !!directMotion
           };
           hand.shakePower = 0;
           hand.guardAt = now;
           hand.guardPoint = { x: shot.x, y: shot.y };
-          resetAttackMotion(hand, now);
           burst(shot.x, shot.y, 30);
-          const held = heldHands().map(item => item.id[0].toUpperCase()).join(' + ');
-          say(`${hand.id.toUpperCase()} HAND CAPTURE`, `${held} HOLDING / 反撃エネルギーへ変換`);
-          tone(620 + game.volleyCaptured * 35, 0.08);
+          hand.interceptSamples.length = 0;
+          if (directMotion) {
+            throwHeld(hand, directMotion.start, directMotion.end, now, true);
+            burst(shot.x, shot.y, 48);
+          } else {
+            resetAttackMotion(hand, now);
+            const held = heldHands().map(item => item.id[0].toUpperCase()).join(' + ');
+            say(`${hand.id.toUpperCase()} SOFT CATCH`, `${held} HOLDING / FLICK FOR POWER RETURN`);
+            tone(620 + game.volleyCaptured * 35, 0.08);
+          }
           break;
         }
       }
@@ -2340,7 +2386,7 @@
       polygon(shot.x, shot.y, shot.radius * (1.2 + shot.travel * 0.28), 4, Math.PI / 4, '#ffffff', shot.travel > 0.72 ? 2 : 1, 0.16 + shot.travel * 0.5);
     }
 
-    function drawCatchMarker(shot, now) {
+    function drawReturnMarker(shot, now) {
       const pulse = 0.5 + Math.sin(now * 0.02) * 0.5;
       const size = 88 + pulse * 10;
       const color = '#72f1b8';
@@ -2356,7 +2402,7 @@
       ctx.font = '900 12px ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('CATCH', shot.x, shot.y - size / 2 - 9);
+      ctx.fillText('RETURN', shot.x, shot.y - size / 2 - 9);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
@@ -2482,7 +2528,7 @@
           if (!shot) continue;
           drawIncomingShot(enemyShot, shot, now, false);
           const remaining = enemyShot.flight - (now - enemyShot.born);
-          if (remaining >= 0 && remaining <= enemyShot.catchWindow) drawCatchMarker(shot, now);
+          if (remaining >= 0 && remaining <= enemyShot.catchWindow) drawReturnMarker(shot, now);
         }
       }
 
@@ -2493,7 +2539,16 @@
         energyTrail(playerShot.from, playerShot.to, travel, playerShot.color);
         const x = playerShot.from.x + (playerShot.to.x - playerShot.from.x) * travel;
         const y = playerShot.from.y + (playerShot.to.y - playerShot.from.y) * travel;
-        const radius = (18 + playerShot.power * 14) * (playerShot.fused ? 1.9 : 1) * (1 - progress * 0.68);
+        const radius = (18 + playerShot.power * 14) * (playerShot.fused ? 1.9 : playerShot.strong ? 1.45 : 1) * (1 - progress * 0.68);
+        if (playerShot.strong && !playerShot.fused) {
+          energyTrail(playerShot.from, playerShot.to, Math.max(0, travel - 0.025), (playerShot.color + 2) % COLORS.length);
+          polygon(x, y, radius * 1.3, 4, Math.PI / 4 + now * 0.004, '#ffffff', 2, 0.72);
+          for (let pixel = 0; pixel < 8; pixel++) {
+            const angle = pixel / 8 * Math.PI * 2 - now * 0.01;
+            ctx.fillStyle = COLORS[(playerShot.color + pixel) % COLORS.length];
+            ctx.fillRect(Math.round(x + Math.cos(angle) * radius * 1.2) - 2, Math.round(y + Math.sin(angle) * radius * 1.2) - 2, 5, 5);
+          }
+        }
         if (playerShot.fused) {
           energyTrail(playerShot.from, playerShot.to, Math.max(0, travel - 0.035), (playerShot.color + 2) % COLORS.length);
           polygon(x, y, radius * 1.45, 8, now * 0.006, '#ffffff', 2, 0.78);
