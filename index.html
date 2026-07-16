@@ -363,15 +363,149 @@
       line-height: 1.5;
     }
 
-    .calibration {
-      width: 120px;
-      aspect-ratio: 1;
-      margin: 8px auto 20px;
+    .calibration-hands {
       display: grid;
-      place-items: center;
-      border: 1px solid var(--cyan);
+      grid-template-columns: repeat(2, minmax(0, 180px));
+      justify-content: center;
+      gap: clamp(12px, 3vw, 28px);
+      margin: 8px auto 20px;
+    }
+
+    .calibration-hand {
+      --hand-accent: #68758a;
+      min-width: 0;
+      color: #78849a;
+      transition: color 180ms ease, filter 180ms ease;
+    }
+
+    .calibration-frame {
+      position: relative;
+      aspect-ratio: 1;
+      overflow: hidden;
+      border: 1px solid var(--hand-accent);
+      background:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+        #000;
+      background-size: 12px 12px;
+      box-shadow: inset 0 0 28px rgba(104,117,138,0.08);
+      transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+
+    .calibration-frame::before,
+    .calibration-frame::after {
+      content: '';
+      position: absolute;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .calibration-frame::before {
+      inset: 7px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background:
+        linear-gradient(var(--hand-accent), var(--hand-accent)) left top / 16px 2px no-repeat,
+        linear-gradient(var(--hand-accent), var(--hand-accent)) left top / 2px 16px no-repeat,
+        linear-gradient(var(--hand-accent), var(--hand-accent)) right top / 16px 2px no-repeat,
+        linear-gradient(var(--hand-accent), var(--hand-accent)) right top / 2px 16px no-repeat,
+        linear-gradient(var(--hand-accent), var(--hand-accent)) left bottom / 16px 2px no-repeat,
+        linear-gradient(var(--hand-accent), var(--hand-accent)) left bottom / 2px 16px no-repeat,
+        linear-gradient(var(--hand-accent), var(--hand-accent)) right bottom / 16px 2px no-repeat,
+        linear-gradient(var(--hand-accent), var(--hand-accent)) right bottom / 2px 16px no-repeat;
+      opacity: 0.78;
+    }
+
+    .calibration-frame::after {
+      left: 8px;
+      right: 8px;
+      top: 8px;
+      height: 2px;
+      opacity: 0;
+      background: var(--cyan);
+      box-shadow: 0 0 11px var(--cyan), 0 0 24px rgba(45,226,230,0.55);
+    }
+
+    .calibration-hand-image {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      padding: 6%;
+      background: #000;
+      image-rendering: auto;
+      transition: opacity 220ms ease, transform 220ms ease, filter 220ms ease;
+    }
+
+    .calibration-hand-image.locked { opacity: 0; transform: scale(0.94); }
+
+    .calibration-hand.tracking {
+      --hand-accent: var(--cyan);
       color: var(--cyan);
-      font-size: 18px;
+    }
+
+    .calibration-hand.tracking .calibration-frame {
+      box-shadow: inset 0 0 34px rgba(45,226,230,0.1), 0 0 18px rgba(45,226,230,0.12);
+    }
+
+    .calibration-hand.tracking .calibration-frame::after {
+      opacity: 1;
+      animation: calibration-scan 680ms linear infinite alternate;
+    }
+
+    .calibration-hand.is-locked {
+      --hand-accent: var(--lime);
+      color: var(--lime);
+      filter: saturate(1.2);
+    }
+
+    .calibration-hand.is-locked .calibration-frame {
+      border-color: var(--lime);
+      box-shadow:
+        inset 0 0 36px rgba(114,241,184,0.12),
+        0 0 12px rgba(45,226,230,0.24),
+        0 0 28px rgba(255,42,109,0.14);
+      animation: calibration-lock 420ms steps(3, end) 1;
+    }
+
+    .calibration-hand.is-locked .calibration-hand-image.idle {
+      opacity: 0;
+      transform: scale(1.06);
+    }
+
+    .calibration-hand.is-locked .calibration-hand-image.locked {
+      opacity: 1;
+      transform: scale(1);
+      filter: saturate(1.28) contrast(1.08) drop-shadow(0 0 7px rgba(45,226,230,0.35));
+    }
+
+    .calibration-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 7px;
+      font-size: 9px;
+      letter-spacing: 0.11em;
+    }
+
+    .calibration-label strong {
+      color: currentColor;
+      font-size: inherit;
+      font-weight: 800;
+    }
+
+    @keyframes calibration-scan {
+      from { top: 8px; }
+      to { top: calc(100% - 10px); }
+    }
+
+    @keyframes calibration-lock {
+      0% { transform: scale(1); filter: brightness(1); }
+      35% { transform: scale(1.035); filter: brightness(2.3); }
+      62% { transform: translateX(-2px); }
+      78% { transform: translateX(2px); }
+      100% { transform: scale(1); filter: brightness(1); }
     }
 
     .footer kbd {
@@ -395,6 +529,7 @@
       .brand span, #fps { display: none; }
       .footer { align-items: flex-start; }
       .footer > span { max-width: 82%; }
+      .calibration-hands { grid-template-columns: repeat(2, minmax(0, 142px)); }
     }
 
     @media (max-height: 560px) {
@@ -407,6 +542,7 @@
       .card { padding: 16px; }
       .tagline { margin-bottom: 12px; }
       .lead { margin-bottom: 14px; line-height: 1.55; }
+      .calibration-hands { grid-template-columns: repeat(2, minmax(0, 116px)); margin-bottom: 12px; }
     }
   </style>
 </head>
@@ -498,7 +634,22 @@
       <section class="modal" id="calibrationModal" hidden>
         <div class="card">
           <p class="eyebrow">CALIBRATION</p>
-          <div class="calibration">2 HANDS</div>
+          <div class="calibration-hands" aria-label="左右の手の認識状態">
+            <div class="calibration-hand" id="calibrationLeft">
+              <div class="calibration-frame">
+                <img class="calibration-hand-image idle" src="assets/calibration/left-idle.png" alt="左手を画面に向けるガイド">
+                <img class="calibration-hand-image locked" src="assets/calibration/left-locked.png" alt="" aria-hidden="true">
+              </div>
+              <div class="calibration-label"><span>LEFT HAND</span><strong id="calibrationLeftStatus">SEARCHING</strong></div>
+            </div>
+            <div class="calibration-hand" id="calibrationRight">
+              <div class="calibration-frame">
+                <img class="calibration-hand-image idle" src="assets/calibration/right-idle.png" alt="右手を画面に向けるガイド">
+                <img class="calibration-hand-image locked" src="assets/calibration/right-locked.png" alt="" aria-hidden="true">
+              </div>
+              <div class="calibration-label"><span>RIGHT HAND</span><strong id="calibrationRightStatus">SEARCHING</strong></div>
+            </div>
+          </div>
           <h2>DUAL PALM // HOLD</h2>
           <p class="lead">画面に向けて両手を構え、開いた掌をしばらく静止してください。</p>
           <p class="note" id="calibrationNote">SEARCHING FOR 2 HANDS...</p>
@@ -544,7 +695,10 @@
       sequenceHud: $('sequenceHud'),
       sequence: [...document.querySelectorAll('.sequence span')], message: $('message'),
       sub: $('subMessage'), start: $('startModal'), calibration: $('calibrationModal'),
-      calibrationNote: $('calibrationNote'), result: $('resultModal'), resultCode: $('resultCode'),
+      calibrationNote: $('calibrationNote'),
+      calibrationHands: { Left: $('calibrationLeft'), Right: $('calibrationRight') },
+      calibrationStatuses: { Left: $('calibrationLeftStatus'), Right: $('calibrationRightStatus') },
+      result: $('resultModal'), resultCode: $('resultCode'),
       resultTitle: $('resultTitle'), resultRank: $('resultRank'), resultText: $('resultText'),
       resultGesture: $('resultGesture'), cameraStart: $('cameraStart'), startNote: $('startNote')
     };
@@ -603,6 +757,7 @@
     function createHand(id, x) {
       return {
         id, visible: false, open: false, previousOpen: false,
+        calibrationSince: 0, calibrationLocked: false,
         target: [], drawn: [], samples: [], x, y: 0.64,
         lastSeenAt: -Infinity,
         held: null, shakePower: 0, guardAt: -Infinity, guardPoint: null,
@@ -613,7 +768,7 @@
     const input = {
       mode: 'camera', visible: false, open: false, previousOpen: false,
       target: [], drawn: [], samples: [], lastStrikeAt: -Infinity,
-      x: 0.5, y: 0.62, calibrationSince: 0,
+      x: 0.5, y: 0.62, calibrationSince: 0, calibrationCompleteAt: 0,
       hands: { Left: createHand('Left', 0.32), Right: createHand('Right', 0.68) }
     };
 
@@ -1608,6 +1763,68 @@
       return extended >= 3;
     }
 
+    function updateCalibrationPanel(hand, now) {
+      const panel = ui.calibrationHands[hand.id];
+      const status = ui.calibrationStatuses[hand.id];
+      const tracking = hand.visible && hand.open && !hand.calibrationLocked;
+      panel.classList.toggle('tracking', tracking);
+      panel.classList.toggle('is-locked', hand.calibrationLocked);
+
+      if (hand.calibrationLocked) status.textContent = 'LOCKED';
+      else if (tracking) {
+        const progress = Math.min(99, Math.round((now - hand.calibrationSince) / 6.5));
+        status.textContent = `HOLD ${progress}%`;
+      }
+      else if (hand.visible) status.textContent = 'OPEN PALM';
+      else status.textContent = 'SEARCHING';
+    }
+
+    function resetCalibration() {
+      input.calibrationSince = 0;
+      input.calibrationCompleteAt = 0;
+      handStates().forEach(hand => {
+        hand.calibrationSince = 0;
+        hand.calibrationLocked = false;
+        updateCalibrationPanel(hand, performance.now());
+      });
+      ui.calibrationNote.textContent = 'SEARCHING FOR 2 HANDS...';
+    }
+
+    function processCalibration(now) {
+      handStates().forEach(hand => {
+        if (!hand.calibrationLocked && hand.visible && hand.open) {
+          if (!hand.calibrationSince) hand.calibrationSince = now;
+          if (now - hand.calibrationSince >= 650) {
+            hand.calibrationLocked = true;
+            tone(hand.id === 'Left' ? 540 : 620, 0.09, 0.025);
+          }
+        }
+        else if (!hand.calibrationLocked) hand.calibrationSince = 0;
+        updateCalibrationPanel(hand, now);
+      });
+
+      const locked = handStates().filter(hand => hand.calibrationLocked).length;
+      if (locked === 2) {
+        if (!input.calibrationCompleteAt) {
+          input.calibrationCompleteAt = now;
+          tone(760, 0.13, 0.035);
+          setTimeout(() => tone(980, 0.12, 0.03), 90);
+        }
+        ui.calibrationNote.textContent = 'DUAL LINK ESTABLISHED';
+        if (now - input.calibrationCompleteAt >= 800) startBattle();
+        return;
+      }
+
+      input.calibrationCompleteAt = 0;
+      if (locked) ui.calibrationNote.textContent = `PALM LOCK ${locked}/2 // HOLD OTHER HAND`;
+      else {
+        const visible = visibleHands();
+        ui.calibrationNote.textContent = visible.length < 2
+          ? `HANDS ${visible.length}/2`
+          : 'OPEN BOTH PALMS';
+      }
+    }
+
     function processLandmarks(result, now) {
       const detected = result?.landmarks || [];
       const used = new Set();
@@ -1646,8 +1863,7 @@
         ui.hand.textContent = `HANDS 0/2${holding ? ` / HOLD ${holding}` : ''}`;
         ui.hand.classList.remove('live');
         if (game.state === 'calibrate') {
-          input.calibrationSince = 0;
-          ui.calibrationNote.textContent = 'SEARCHING FOR 2 HANDS...';
+          processCalibration(now);
         }
         if (['win', 'lose'].includes(game.state) && !ui.result.hidden) {
           game.retrySince = 0;
@@ -1665,15 +1881,7 @@
       ui.hand.classList.add('live');
 
       if (game.state === 'calibrate') {
-        if (hands.length === 2 && hands.every(hand => hand.open)) {
-          if (!input.calibrationSince) input.calibrationSince = now;
-          const progress = Math.min(100, Math.round((now - input.calibrationSince) / 7));
-          ui.calibrationNote.textContent = `DUAL PALM ${progress}%`;
-          if (now - input.calibrationSince >= 700) startBattle();
-        } else {
-          input.calibrationSince = 0;
-          ui.calibrationNote.textContent = hands.length < 2 ? `HANDS ${hands.length}/2` : 'OPEN BOTH PALMS';
-        }
+        processCalibration(now);
         return;
       }
 
@@ -1700,8 +1908,7 @@
       ui.start.hidden = true;
       ui.result.hidden = true;
       ui.calibration.hidden = false;
-      input.calibrationSince = 0;
-      ui.calibrationNote.textContent = 'SEARCHING FOR 2 HANDS...';
+      resetCalibration();
       ui.cameraStart.disabled = false;
       setState('calibrate');
     }
