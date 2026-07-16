@@ -1283,14 +1283,15 @@
       let flight;
       let catchWindow;
       let damage;
+      const curve = 1.4;
       if (game.phase === 'boss') {
         const pose = enemyPose(now, 0);
         const ports = bossPorts(pose, now, 5);
         const portIndex = game.shotSerial % ports.length;
         port = ports[portIndex];
         color = portIndex;
-        flight = 3500;
-        catchWindow = 2100;
+        flight = 4100;
+        catchWindow = 2800;
         damage = profile.bossDamage;
       } else {
         shooter = alive[game.shooterCursor % alive.length];
@@ -1302,12 +1303,12 @@
           y: pose.y + Math.sin(angle) * 54 * pose.scale
         };
         color = (shooter + game.shotSerial) % COLORS.length;
-        flight = 3300;
-        catchWindow = 1900;
+        flight = 3900;
+        catchWindow = 2600;
         damage = profile.squadDamage;
       }
       const origin = { x: port.x / W, y: port.y / H };
-      const catchStartTravel = Math.pow((flight - catchWindow) / flight, 1.55);
+      const catchStartTravel = Math.pow((flight - catchWindow) / flight, curve);
       const impact = chooseImpact(origin, occupied, catchStartTravel);
       const order = ++game.shotSerial;
       game.enemyShots.push({
@@ -1317,7 +1318,7 @@
         born: now,
         flight,
         catchWindow,
-        curve: 1.55,
+        curve,
         damage,
         order,
         color,
