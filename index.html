@@ -482,7 +482,7 @@
           <p class="tagline">ADVANCE. CATCH. RETURN.</p>
           <p class="lead">
             画面に向けて両手を構え、奥から来る弾をキャッチ。<br>
-            1周目は敵2機から開始。両手の弾は接触で合体し、ボスを倒すたびに敵と弾が増えます。
+            1周目は敵2機から開始。ボスを倒すたびに敵と弾が増えます。
           </p>
           <p class="eyebrow">LOOP 1 // 2 UNITS // MAX 2 PULSES</p>
           <div class="buttons">
@@ -517,7 +517,7 @@
     </main>
 
     <footer class="footer">
-      <span>CAMERA + DUAL HANDS ONLY　DUAL HOLD → HANDS TOGETHER / FUSION　EACH LOOP +1 PULSE</span>
+      <span>CAMERA + DUAL HANDS ONLY　CATCH INCOMING PULSES　FLICK TO RETURN　EACH LOOP +1 PULSE</span>
     </footer>
   </div>
 
@@ -560,8 +560,8 @@
       [13,17],[17,18],[18,19],[19,20],[0,17]
     ];
     const HAND_IDS = ['Left', 'Right'];
-    const THROW_DISTANCE = 0.09;
-    const THROW_SPEED = 0.0002;
+    const THROW_DISTANCE = 0.045;
+    const THROW_SPEED = 0.0001;
     const RUN_DURATION = 30000;
     const MAX_ACTIVE_ENEMIES = 5;
     const BOSS_BASE_HP = 180;
@@ -579,7 +579,7 @@
       idle: 'IDLE', intro: 'LINKED', advance: 'FORWARD DRIVE', encounter: 'CONTACT', read: 'CORE CHARGE',
       attack: 'PULSE INCOMING', counter: 'RETURN WINDOW', returning: 'PULSE RETURN', recover: 'COOL DOWN',
       bossWarning: 'THREAT ALERT', bossIntro: 'OMEGA ONLINE',
-      finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', loopTransition: 'LOOP SHIFT', win: 'COMPLETE', lose: 'FAILED',
+      finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', bossDefeated: 'CORE COLLAPSE', loopTransition: 'LOOP SHIFT', win: 'COMPLETE', lose: 'FAILED',
       calibrate: 'CALIBRATION'
     };
 
@@ -745,7 +745,6 @@
       resetAttackMotion(left, now);
       resetAttackMotion(right, now);
       burst(center.x, center.y, 72);
-      say('DUAL PULSE FUSION', 'どちらかの手を強く振って3体貫通 / BOSS大ダメージ');
       tone(180, 0.16, 0.05);
       setTimeout(() => tone(720, 0.2, 0.045), 70);
       return true;
@@ -828,6 +827,14 @@
           bar.style.width = `${segmentRatio * 100}%`;
           bar.parentElement?.classList.toggle('off', segmentRatio <= 0);
         });
+      } else if (game.phase === 'boss-destroyed') {
+        ui.targetName.textContent = `OMEGA CORE / DESTROYED`;
+        ui.enemyHp.textContent = `LOOP ${game.loop} CLEAR`;
+        ui.enemyHealths.forEach(bar => {
+          bar.parentElement.style.display = '';
+          bar.style.width = '0%';
+          bar.parentElement?.classList.add('off');
+        });
       } else if (game.phase === 'loop-transition') {
         ui.targetName.textContent = `LOOP SHIFT / NEXT ${game.loop}`;
         ui.enemyHp.textContent = `${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} PULSES`;
@@ -847,6 +854,9 @@
         if (game.state === 'idle') {
           ui.targetName.textContent = 'FORWARD SCAN / PULSE CONTACTS';
           ui.enemyHp.textContent = `2 UNITS / MAX ${BATTLE_PROFILE.maxIncoming}`;
+        } else if (game.bossPending) {
+          ui.targetName.textContent = `LOOP ${game.loop} / CLEAR REMAINING CONTACTS`;
+          ui.enemyHp.textContent = `${alive} TARGET${alive === 1 ? '' : 'S'} / NO REINFORCEMENTS`;
         } else {
           const seconds = Math.max(0, Math.ceil((game.bossAt - performance.now()) / 1000));
           ui.targetName.textContent = `LOOP ${game.loop} / BOSS IN ${seconds}s`;
@@ -964,7 +974,7 @@
     }
 
     function spawnStreamEnemy(now) {
-      if (game.phase !== 'squad') return false;
+      if (game.phase !== 'squad' || game.bossPending) return false;
       const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
       if (alive >= activeEnemyLimit()) return false;
       const slot = game.enemies.findIndex(enemy => enemy.hp <= 0);
@@ -984,10 +994,29 @@
     }
 
     function maintainEnemyStream(now) {
-      if (game.phase !== 'squad' || game.state !== 'attack') return;
+      if (game.phase !== 'squad' || game.state !== 'attack' || game.bossPending) return;
       if (now < game.nextEnemySpawnAt) return;
       const spawned = spawnStreamEnemy(now);
       game.nextEnemySpawnAt = now + (spawned ? 720 + Math.random() * 380 : 280);
+    }
+
+    function maybeBeginBossWarning(now) {
+      if (game.phase !== 'squad' || !game.bossPending) return false;
+      const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
+      if (alive > 0) return false;
+      beginBossWarning(now);
+      return true;
+    }
+
+    function closeSquadRun(now) {
+      if (game.phase !== 'squad' || game.bossPending) return false;
+      game.bossPending = true;
+      game.nextEnemySpawnAt = Infinity;
+      const alive = game.enemies.filter(enemy => enemy.hp > 0).length;
+      updateHud();
+      say('30 SECOND MARK / REINFORCEMENTS OFFLINE', alive ? `${alive} CONTACT${alive === 1 ? '' : 'S'} REMAIN / CLEAR THE SECTOR` : 'SECTOR CLEAR');
+      tone(150, 0.12, 0.035);
+      return maybeBeginBossWarning(now);
     }
 
     function beginRead(now = performance.now()) {
@@ -1017,10 +1046,10 @@
       setState('read', now);
       if (game.phase === 'boss') {
         game.bossPortIndex = Math.floor(Math.random() * 3);
-        say('OMEGA CORE / BARRAGE CHARGE', '連続飛来の2発を合体可能');
+        say('OMEGA CORE / BARRAGE CHARGE', '複数の接近軌道を注視');
         game.nextAt = now + 780;
       } else {
-        say(`CONTACT ${game.attackers.map(index => index + 1).join(' + ')} / CORE CHARGE`, '重なる2発の軌道を注視');
+        say(`CONTACT ${game.attackers.map(index => index + 1).join(' + ')} / CORE CHARGE`, '弾の接近軌道を注視');
         game.nextAt = now + 720;
       }
     }
@@ -1157,7 +1186,7 @@
       game.exchangeClosing = false;
       setState('attack', now);
       game.nextEnemyShotAt = now;
-      say(game.phase === 'boss' ? 'OMEGA BARRAGE INBOUND' : 'PULSE STREAM INBOUND', '弾は連続飛来 / 2発を合体可能');
+      say(game.phase === 'boss' ? 'OMEGA BARRAGE INBOUND' : 'PULSE STREAM INBOUND', '弾の接近に合わせてCATCH');
       game.nextAt = Infinity;
       updateEnemyFire(now);
       tone(380, 0.05);
@@ -1210,7 +1239,7 @@
             hand.shakePower = Math.min(1, hand.shakePower + 0.07 + Math.min(0.18, step * 2.8));
             if (!shouldLaunch) hand.attackAnchor = current;
             if (hand.shakePower > before) {
-              say(`${hand.id.toUpperCase()} PULSE CHARGING`, `POWER ${Math.round(hand.shakePower * 100)}% ／ その手を大きく振ってRETURN`);
+              say(`${hand.id.toUpperCase()} PULSE CHARGING`, `POWER ${Math.round(hand.shakePower * 100)}% ／ その手を素早く返してRETURN`);
               tone(280 + hand.shakePower * 240, 0.035, 0.012);
             }
           }
@@ -1229,7 +1258,7 @@
       if (!hand?.held || now - hand.lastStrikeAt < 230) return false;
       const metrics = throwMetrics(start, end, now);
       if (!bypassStrength && (metrics.distance < THROW_DISTANCE || metrics.speed < THROW_SPEED)) {
-        say(`${hand.id.toUpperCase()} THROW TOO WEAK`, 'もっと大きく・速く振ってRETURN');
+        say(`${hand.id.toUpperCase()} THROW TOO WEAK`, '手首を返すように素早くRETURN');
         tone(95, 0.08, 0.02);
         resetAttackMotion(hand, now);
         return false;
@@ -1275,8 +1304,8 @@
       game.stats.strikes += 1;
       game.stats.maxPower = Math.max(game.stats.maxPower, power);
       addScore(isFused ? 120 : 50);
-      say(isFused ? `FUSION PULSE RETURNED / ${damage} POWER` : `${hand.id.toUpperCase()} PULSE RETURNED / ${damage} DMG`,
-        isFused ? 'MULTI TARGET PENETRATION' : (heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`));
+      say(`${hand.id.toUpperCase()} PULSE RETURNED / ${damage} DMG`,
+        isFused ? 'RETURN CONFIRMED' : (heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`));
       tone(isFused ? 860 : 520 + power * 260, isFused ? 0.18 : 0.09, isFused ? 0.055 : 0.04);
       return true;
     }
@@ -1352,7 +1381,7 @@
         game.targetHitUntil = now + 520;
         game.nextEnemySpawnAt = Math.min(game.nextEnemySpawnAt, now + 420);
         updateHud();
-        say(`FUSION PENETRATION / ${victims.length} UNITS DOWN`, `TOTAL ${game.kills} / BOSS TIMER ACTIVE`);
+        say(`CHAIN IMPACT / ${victims.length} UNITS DOWN`, `TOTAL ${game.kills} / BOSS TIMER ACTIVE`);
         tone(52, 0.34, 0.06);
         setTimeout(() => tone(420, 0.24, 0.045), 90);
         maybeFinishExchange(now);
@@ -1360,8 +1389,8 @@
       }
       enemy.hp = Math.max(0, enemy.hp - playerShot.damage);
       game.stats.damage += playerShot.damage;
-      game.hitUntil = now + 150;
-      game.targetHitUntil = now + 380;
+      game.hitUntil = now + (enemy.boss ? 280 : 150);
+      game.targetHitUntil = now + (enemy.boss ? 620 : 380);
       game.returnTarget = playerShot.targetIndex;
       const target = playerShot.to;
       updateHud();
@@ -1380,9 +1409,15 @@
         setTimeout(() => tone(180, 0.18, 0.04), 70);
         setTimeout(() => tone(45, 0.32, 0.05), 140);
         const alive = game.enemies.filter(unit => unit.hp > 0).length;
-        say(enemy.boss ? 'OMEGA CORE HIT' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `TOTAL ${game.kills} / ${alive} ACTIVE`);
+        say(enemy.boss ? 'OMEGA CORE DESTROYED' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? 'CORE COLLAPSE DETECTED' : `TOTAL ${game.kills} / ${alive} ACTIVE`);
       } else {
-        burst(target.x, target.y, Math.round(26 + playerShot.power * 38));
+        if (enemy.boss) {
+          destructionEffects.push({ x: target.x, y: target.y, born: now, bossImpact: true, power: playerShot.power });
+          burst(target.x, target.y, Math.round(70 + playerShot.power * 70));
+          setTimeout(() => tone(420 + playerShot.power * 260, 0.12, 0.032), 55);
+        } else {
+          burst(target.x, target.y, Math.round(26 + playerShot.power * 38));
+        }
         say(`${playerShot.handId.toUpperCase()} RETURN / ${playerShot.damage} DAMAGE`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `UNIT ${playerShot.targetIndex + 1} HP ${Math.round(enemy.hp)}`);
       }
       maybeFinishExchange(now);
@@ -1397,10 +1432,27 @@
 
     function maybeFinishExchange(now) {
       if (game.playerHp <= 0) return finish(false);
+      if (maybeBeginBossWarning(now)) return;
       const boss = game.phase === 'boss' ? game.enemies[0] : null;
       if (boss && boss.hp <= 0) {
-        beginLoopTransition(now);
+        beginBossDestruction(now);
       }
+    }
+
+    function beginBossDestruction(now) {
+      if (game.phase !== 'boss') return;
+      game.phase = 'boss-destroyed';
+      game.enemyShots = [];
+      game.playerShots = [];
+      clearHandActions();
+      setState('bossDefeated', now);
+      game.hitUntil = Math.max(game.hitUntil, now + 900);
+      game.nextAt = now + 1800;
+      updateHud();
+      say('OMEGA CORE DESTROYED', `LOOP ${game.loop} CLEAR / COLLAPSE IN PROGRESS`);
+      tone(58, 0.38, 0.06);
+      setTimeout(() => tone(42, 0.5, 0.055), 260);
+      setTimeout(() => tone(260, 0.28, 0.035), 720);
     }
 
     function beginLoopTransition(now) {
@@ -1513,10 +1565,7 @@
           game.lastTimerSecond = timerSecond;
           updateHud();
         }
-        if (now >= game.bossAt) {
-          beginBossWarning(now);
-          return;
-        }
+        if (now >= game.bossAt && !game.bossPending && closeSquadRun(now)) return;
       }
       updatePlayerShots(now);
       if (game.state === 'attack') {
@@ -1537,6 +1586,7 @@
       else if (game.state === 'bossWarning' && now >= game.nextAt) spawnBoss(now);
       else if (game.state === 'bossIntro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'read' && now >= game.nextAt) beginAttack(now);
+      else if (game.state === 'bossDefeated' && now >= game.nextAt) beginLoopTransition(now);
       else if (game.state === 'loopTransition' && now >= game.nextAt) startNextLoop(now);
       else if (game.state === 'win' && game.nextAt && now >= game.nextAt && ui.result.hidden) {
         game.nextAt = 0;
@@ -2294,13 +2344,6 @@
         }
         pulseBall(center.x, center.y, 28 + power * 18, now * 0.018, fusion.color);
         polygon(center.x, center.y, 48 + power * 16, 8, now * 0.003, '#ffffff', 2, 0.8);
-        ctx.fillStyle = '#fff';
-        ctx.font = '900 15px ui-monospace, monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`FUSION HOLD / POWER ${Math.round(power * 100)}% / SWING HARD`, center.x, center.y + 94);
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'alphabetic';
         return;
       }
       heldHands().forEach((hand, handIndex) => {
@@ -2323,7 +2366,7 @@
         ctx.font = '700 13px ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`${hand.id.toUpperCase()} HOLD / POWER ${Math.round(hand.shakePower * 100)}% / SWING HARD`, center.x, center.y + 80);
+        ctx.fillText(`${hand.id.toUpperCase()} HOLD / POWER ${Math.round(hand.shakePower * 100)}% / FLICK TO RETURN`, center.x, center.y + 80);
       });
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
@@ -2342,13 +2385,42 @@
       for (let i = destructionEffects.length - 1; i >= 0; i--) {
         const effect = destructionEffects[i];
         const age = now - effect.born;
-        if (age > 950) { destructionEffects.splice(i, 1); continue; }
-        const progress = age / 950;
+        if (age < 0) continue;
+        const duration = effect.bossImpact ? 620 : effect.boss ? 1800 : 950;
+        if (age > duration) { destructionEffects.splice(i, 1); continue; }
+        const progress = age / duration;
         const alpha = 1 - progress;
-        const blastScale = effect.boss ? 1.7 : 1;
+        if (effect.bossImpact) {
+          const power = effect.power || 0;
+          polygon(effect.x, effect.y, 20 + progress * (105 + power * 45), 10, now * 0.005, '#ffffff', 3, alpha);
+          polygon(effect.x, effect.y, 12 + progress * (76 + power * 32), 6, -now * 0.007, '#ff2a6d', 2, alpha * 0.9);
+          polygon(effect.x, effect.y, 8 + progress * 48, 4, Math.PI / 4 + now * 0.009, '#f9f871', 2, alpha * 0.82);
+          for (let ray = 0; ray < 24; ray++) {
+            const angle = ray / 24 * Math.PI * 2 + (ray % 4) * 0.11;
+            const distance = 18 + progress * (52 + (ray % 5) * 13);
+            const size = Math.max(3, (8 + power * 5) * alpha);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = COLORS[(ray + 1) % COLORS.length];
+            ctx.fillRect(
+              Math.round(effect.x + Math.cos(angle) * distance - size / 2),
+              Math.round(effect.y + Math.sin(angle) * distance - size / 2),
+              size,
+              size
+            );
+          }
+          if (age < 90) {
+            ctx.globalAlpha = (1 - age / 90) * 0.1;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, W, H);
+          }
+          ctx.globalAlpha = 1;
+          continue;
+        }
+        const blastScale = effect.boss ? 1.9 : 1;
         polygon(effect.x, effect.y, (24 + progress * 170) * blastScale, 8, now * 0.0018, COLORS[i % 5], effect.boss ? 4 : 2, alpha);
         polygon(effect.x, effect.y, (12 + progress * 118) * blastScale, 6, -now * 0.0024, COLORS[(i + 3) % 5], effect.boss ? 3 : 2, alpha);
-        const rayCount = effect.boss ? 48 : 32;
+        if (effect.boss) polygon(effect.x, effect.y, (8 + progress * 82) * blastScale, 4, Math.PI / 4 + now * 0.004, '#ffffff', 3, alpha * 0.9);
+        const rayCount = effect.boss ? 64 : 32;
         for (let ray = 0; ray < rayCount; ray++) {
           const angle = ray / rayCount * Math.PI * 2 + (ray % 3) * 0.16;
           const distance = progress * (78 + (ray % 5) * 24);
@@ -2362,9 +2434,15 @@
             size
           );
         }
-        if (age < 140) {
-          ctx.globalAlpha = (1 - age / 140) * 0.28;
+        if (age < (effect.boss ? 180 : 140)) {
+          const flashDuration = effect.boss ? 180 : 140;
+          ctx.globalAlpha = (1 - age / flashDuration) * (effect.boss ? 0.42 : 0.28);
           ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, W, H);
+        }
+        if (effect.boss && age > 520 && age < 700) {
+          ctx.globalAlpha = (1 - (age - 520) / 180) * 0.16;
+          ctx.fillStyle = '#ff2a6d';
           ctx.fillRect(0, 0, W, H);
         }
         ctx.globalAlpha = 1;
