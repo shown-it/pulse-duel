@@ -281,21 +281,32 @@
     .upgrade-panel { width: min(720px, 100%); text-align: center; }
     .upgrade-panel h2 { margin: 8px 0; font-size: clamp(24px, 5vw, 40px); color: #fff; }
     .upgrade-recovery { color: var(--lime); font-size: 15px; margin: 10px 0 22px; }
+    .upgrade-build { color: #98a9be; font: 11px/1.6 ui-monospace, monospace; margin: -12px 0 18px; }
     .upgrade-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(12px, 3vw, 28px); }
-    .upgrade-option { --accent: var(--cyan); position: relative; padding: 22px 12px 16px; border: 2px solid #30404f; background: #030911; min-width: 0; }
+    .upgrade-option { --accent: var(--cyan); position: relative; display: flex; flex-direction: column; padding: 22px 12px 16px; border: 2px solid #30404f; background: #030911; min-width: 0; }
     .upgrade-option:nth-child(2) { --accent: var(--lime); }
     .upgrade-option.is-targeted { border-color: var(--accent); background: #091c23; }
     .upgrade-option h3 { color: var(--accent); margin: 16px 0 8px; font: 800 clamp(15px, 2.5vw, 23px) ui-sans-serif, system-ui, sans-serif; }
     .upgrade-option p { min-height: 3.2em; color: #c1cbd8; font: 13px/1.6 ui-sans-serif, system-ui, sans-serif; white-space: pre-line; }
     .upgrade-option small { display: block; color: #8490a8; font-size: 11px; margin-bottom: 12px; }
-    .upgrade-meter { height: 6px; background: #162333; }
+    .upgrade-meter { height: 6px; margin-top: auto; flex-shrink: 0; background: #162333; }
     .upgrade-meter > span { display: block; height: 100%; width: 0%; background: var(--accent); }
-    .upgrade-icon { height: 45px; width: 110px; margin: 0 auto; position: relative; color: var(--accent); }
+    .upgrade-icon { height: 45px; flex-shrink: 0; width: 110px; margin: 0 auto; position: relative; color: var(--accent); }
     .chain-icon::before { content: ''; position: absolute; left: 10px; right: 10px; top: 21px; border-top: 2px solid; }
     .chain-icon i { position: absolute; width: 13px; height: 13px; top: 15px; border: 2px solid; background: #030911; transform: rotate(45deg); }
     .chain-icon i:nth-child(1) { left: 6px; } .chain-icon i:nth-child(2) { left: 47px; } .chain-icon i:nth-child(3) { right: 6px; }
     .wave-icon::before, .wave-icon::after { content: ''; position: absolute; border: 2px solid; left: 34px; top: 1px; width: 42px; height: 42px; }
     .wave-icon::after { left: 47px; top: 14px; width: 16px; height: 16px; background: var(--accent); }
+    .power-icon::before, .power-icon::after { content: ''; position: absolute; width: 24px; height: 24px; top: 9px; border-top: 5px solid; border-right: 5px solid; transform: rotate(45deg); }
+    .power-icon::before { left: 25px; } .power-icon::after { left: 53px; }
+    .charge-icon::before { content: ''; position: absolute; inset: 6px 22px; border: 2px solid; }
+    .charge-icon i { position: absolute; top: 13px; width: 12px; height: 19px; background: currentColor; }
+    .charge-icon i:nth-child(1) { left: 30px; } .charge-icon i:nth-child(2) { left: 49px; } .charge-icon i:nth-child(3) { left: 68px; }
+    .armor-icon::before, .armor-icon::after { content: ''; position: absolute; left: 35px; top: 1px; width: 38px; height: 38px; border: 2px solid; transform: rotate(45deg); }
+    .armor-icon::after { left: 45px; top: 11px; width: 18px; height: 18px; }
+    .vitality-icon::before, .vitality-icon::after { content: ''; position: absolute; background: currentColor; }
+    .vitality-icon::before { left: 35px; top: 17px; width: 40px; height: 11px; }
+    .vitality-icon::after { left: 50px; top: 2px; width: 11px; height: 40px; }
     .upgrade-cursor { position: absolute; z-index: 2; width: 26px; height: 26px; margin: -13px; border: 2px solid #fff; background: #2de2e6; pointer-events: none; transform: rotate(45deg); }
     .upgrade-cursor:nth-of-type(3) { background: #ff2a6d; }
     .upgrade-help { margin: 18px auto 0; min-height: 3em; color: #d3dde8; font: 13px/1.65 ui-sans-serif, system-ui, sans-serif; }
@@ -305,6 +316,7 @@
       .upgrade-panel .eyebrow { margin-bottom: 4px; font-size: 9px; }
       .upgrade-panel h2 { margin: 4px 0; font-size: 24px; }
       .upgrade-recovery { margin: 4px 0 10px; font-size: 12px; }
+      .upgrade-build { margin: -4px 0 8px; font-size: 10px; }
       .upgrade-option { padding: 8px 12px; }
       .upgrade-icon { display: none; }
       .upgrade-option h3 { margin: 4px 0; font-size: 17px; }
@@ -669,7 +681,7 @@
             柔らかく受け止めてから投げると、強力なPOWER RETURNになります。<br>
             最初の2発で操作をつかんだら、敵2機の連続戦へ。<br>
             POWER RETURNの衝撃波は、近くの敵弾も消します。<br>
-            ボスを倒すとHP回復と強化2択。同時飛来は最大4発。
+            ボスを倒すとHP回復。6種類からランダムな強化2択。同時飛来は最大4発。
           </p>
           <p class="eyebrow">LOOP 1 // 2 UNITS // MAX 2 PULSES</p>
           <div class="buttons">
@@ -710,18 +722,19 @@
       <section class="modal upgrade-modal" id="upgradeModal" aria-label="ボス撃破の強化選択" hidden>
         <div class="upgrade-panel">
           <p class="eyebrow">CORE SALVAGED // CHOOSE YOUR RETURN</p>
-          <h2>次の一撃を、強く。</h2>
+          <h2>次は、どう強くなる？</h2>
           <p class="upgrade-recovery" id="upgradeRecovery"></p>
+          <p class="upgrade-build" id="upgradeBuild"></p>
           <div class="upgrade-options">
-            <div class="upgrade-option" id="upgradeChain">
-              <div class="upgrade-icon chain-icon" aria-hidden="true"><i></i><i></i><i></i></div>
-              <h3>連鎖返球</h3><p id="upgradeChainDescription"></p><small id="upgradeChainLevel"></small>
-              <div class="upgrade-meter"><span id="upgradeChainProgress"></span></div>
+            <div class="upgrade-option" id="upgradeOption0">
+              <div class="upgrade-icon" id="upgradeIcon0" aria-hidden="true"><i></i><i></i><i></i></div>
+              <h3 id="upgradeName0"></h3><p id="upgradeDescription0"></p><small id="upgradeLevel0"></small>
+              <div class="upgrade-meter"><span id="upgradeProgress0"></span></div>
             </div>
-            <div class="upgrade-option" id="upgradeWave">
-              <div class="upgrade-icon wave-icon" aria-hidden="true"></div>
-              <h3>弾消し範囲アップ</h3><p id="upgradeWaveDescription"></p><small id="upgradeWaveLevel"></small>
-              <div class="upgrade-meter"><span id="upgradeWaveProgress"></span></div>
+            <div class="upgrade-option" id="upgradeOption1">
+              <div class="upgrade-icon" id="upgradeIcon1" aria-hidden="true"><i></i><i></i><i></i></div>
+              <h3 id="upgradeName1"></h3><p id="upgradeDescription1"></p><small id="upgradeLevel1"></small>
+              <div class="upgrade-meter"><span id="upgradeProgress1"></span></div>
             </div>
           </div>
           <p class="upgrade-help" id="upgradeHelp">選ぶ枠へ片手を置いて、そのままキープ。</p>
@@ -779,11 +792,14 @@
     };
     ui.upgrade = $('upgradeModal');
     ui.upgradeRecovery = $('upgradeRecovery');
+    ui.upgradeBuild = $('upgradeBuild');
     ui.upgradeHelp = $('upgradeHelp');
-    ui.upgradeCards = [$('upgradeChain'), $('upgradeWave')];
-    ui.upgradeDescriptions = [$('upgradeChainDescription'), $('upgradeWaveDescription')];
-    ui.upgradeLevels = [$('upgradeChainLevel'), $('upgradeWaveLevel')];
-    ui.upgradeProgress = [$('upgradeChainProgress'), $('upgradeWaveProgress')];
+    ui.upgradeCards = [0, 1].map(i => $(`upgradeOption${i}`));
+    ui.upgradeNames = [0, 1].map(i => $(`upgradeName${i}`));
+    ui.upgradeIcons = [0, 1].map(i => $(`upgradeIcon${i}`));
+    ui.upgradeDescriptions = [0, 1].map(i => $(`upgradeDescription${i}`));
+    ui.upgradeLevels = [0, 1].map(i => $(`upgradeLevel${i}`));
+    ui.upgradeProgress = [0, 1].map(i => $(`upgradeProgress${i}`));
     ui.upgradeCursors = { Left: $('upgradeCursorLeft'), Right: $('upgradeCursorRight') };
 
     const COLORS = ['#2de2e6', '#ff2a6d', '#f9f871', '#72f1b8', '#9b5de5'];
@@ -814,6 +830,25 @@
     const MAX_CHAIN_JUMPS = 3;
     const WAVE_RADIUS_STEP = 60;
     const MAX_WAVE_BONUS = 240;
+    const POWER_DAMAGE_STEP = 24;
+    const DIRECT_DAMAGE_STEP = 12;
+    const AUTO_CHARGE_PER_SECOND = 0.25;
+    const ARMOR_REDUCTION_STEP = 0.15;
+    const VITALITY_HP_STEP = 20;
+    const UPGRADES = {
+      chain: { name: '連鎖返球', code: 'CHAIN', color: '#2de2e6', max: MAX_CHAIN_JUMPS,
+        describe: rank => `強返球が別の敵へ${rank + 1}回連鎖\n強返球の威力 +${UPGRADE_DAMAGE}` },
+      wave: { name: '弾消し範囲アップ', code: 'WAVE', color: '#72f1b8', max: MAX_WAVE_BONUS / WAVE_RADIUS_STEP,
+        describe: rank => `弾消し半径 +${Math.round((rank + 1) * WAVE_RADIUS_STEP / POWER_CLEAR_RADIUS * 100)}%\n強返球の威力 +${UPGRADE_DAMAGE}` },
+      power: { name: '返球ブースト', code: 'POWER', color: '#ff6e9e', max: Infinity,
+        describe: () => `直接返球の威力 +${DIRECT_DAMAGE_STEP}\n強返球の威力 +${POWER_DAMAGE_STEP}` },
+      charge: { name: 'オートチャージ', code: 'CHARGE', color: '#f9f871', max: 3,
+        describe: rank => `保持中に毎秒${Math.round((rank + 1) * AUTO_CHARGE_PER_SECOND * 100)}%充填\n持つだけで威力アップ` },
+      armor: { name: 'ダメージ軽減', code: 'ARMOR', color: '#7ca8ff', max: 3,
+        describe: rank => `被ダメージを${Math.round((rank + 1) * ARMOR_REDUCTION_STEP * 100)}%軽減\nミスに強い身体へ` },
+      vitality: { name: 'ライフ拡張', code: 'LIFE', color: '#f5a76c', max: Infinity,
+        describe: rank => `最大HP ${100 + rank * VITALITY_HP_STEP} → ${100 + (rank + 1) * VITALITY_HP_STEP}\n今のHPも +${VITALITY_HP_STEP}回復` }
+    };
     const MIN_FIRE_INTERVAL = 900;
     const ATTACK_PATTERNS = {
       alternate: { pairedGap: 0, pauseScale: 1 },
@@ -852,7 +887,7 @@
     const game = {
       time: performance.now(), hitStopRemaining: 0,
       tutorial: { active: false, step: 'return' },
-      upgrades: { chain: 0, wave: 0 }, upgradeChoice: -1, upgradeSince: 0,
+      upgrades: emptyUpgrades(), upgradeOffers: [], lastUpgrade: null, upgradeChoice: -1, upgradeSince: 0,
       upgradeArmed: false, upgradeReadyAt: 0, upgradeBounds: [],
       attackPattern: null, patternBag: [], lastPattern: null,
       state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad', loop: 1,
@@ -1126,11 +1161,24 @@
       updateScore();
     }
 
+    function emptyUpgrades() {
+      return Object.fromEntries(Object.keys(UPGRADES).map(key => [key, 0]));
+    }
+
+    function upgradeRank(key) { return game.upgrades[key] || 0; }
+    function playerMaxHp() { return 100 + upgradeRank('vitality') * VITALITY_HP_STEP; }
+    function armorReduction() { return Math.min(UPGRADES.armor.max, upgradeRank('armor')) * ARMOR_REDUCTION_STEP; }
+    function returnDamageBonus(strong) {
+      return upgradeRank('power') * (strong ? POWER_DAMAGE_STEP : DIRECT_DAMAGE_STEP)
+        + (strong ? (upgradeRank('chain') + upgradeRank('wave')) * UPGRADE_DAMAGE : 0);
+    }
+
     function updateHud() {
       const playerHp = Math.max(0, Math.round(game.playerHp));
-      ui.playerHealth.style.width = `${playerHp}%`;
+      ui.playerHealth.style.width = `${Math.min(100, playerHp / playerMaxHp() * 100)}%`;
       ui.playerHp.textContent = playerHp;
       ui.playerHealthTrack.setAttribute('aria-valuenow', playerHp);
+      ui.playerHealthTrack.setAttribute('aria-valuemax', playerMaxHp());
       if (game.phase === 'boss') {
         const boss = game.enemies[0];
         const ratio = boss ? Math.max(0, boss.hp / boss.maxHp) : 0;
@@ -1229,7 +1277,9 @@
       ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
       game.phase = 'squad';
       game.loop = 1;
-      game.upgrades = { chain: 0, wave: 0 };
+      game.upgrades = emptyUpgrades();
+      game.upgradeOffers = [];
+      game.lastUpgrade = null;
       game.upgradeChoice = -1;
       game.upgradeSince = 0;
       game.score = 0;
@@ -1609,6 +1659,15 @@
       hand.lastMotionVector = null;
       hand.samples.length = 0;
       hand.throwSamples = [point];
+      hand.chargeAt = now;
+    }
+
+    function updateHoldCharge(hand, now) {
+      const elapsed = Math.min(100, Math.max(0, now - (hand.chargeAt ?? now)));
+      hand.chargeAt = now;
+      if (!hand.visible || !(hand.held?.softCatch || hand.held?.fused)) return;
+      const rate = Math.min(UPGRADES.charge.max, upgradeRank('charge')) * AUTO_CHARGE_PER_SECOND;
+      hand.shakePower = Math.min(1, hand.shakePower + rate * elapsed / 1000);
     }
 
     function throwMetrics(start, end, now) {
@@ -1620,6 +1679,7 @@
     function trackAttackMotion(hand, point, now, canLaunch = true) {
       if (!hand.held || !['attack', 'counter'].includes(game.state)) return;
       if (!hand.attackAnchor || !hand.lastMotion) resetAttackMotion(hand, now);
+      updateHoldCharge(hand, now);
       const current = { x: point.x, y: point.y, t: now };
       const vx = current.x - hand.lastMotion.x;
       const vy = current.y - hand.lastMotion.y;
@@ -1690,7 +1750,7 @@
         : isPowerReturn
           ? Math.round(36 + power * 54)
           : Math.round(18 + power * 24);
-      const damage = baseDamage + (isPowerReturn || isFused ? (game.upgrades.chain + game.upgrades.wave) * UPGRADE_DAMAGE : 0);
+      const damage = baseDamage + returnDamageBonus(isPowerReturn || isFused);
       const pose = enemyPose(game.time, targetIndex);
       const launchPoint = isFused ? fusionCenter() : { x: end.x * W, y: end.y * H };
       game.playerShots.push({
@@ -1706,9 +1766,9 @@
         fused: isFused,
         strong: isPowerReturn,
         lesson: held.lesson,
-        chainRemaining: isPowerReturn ? Math.min(MAX_CHAIN_JUMPS, game.upgrades.chain) : 0,
+        chainRemaining: isPowerReturn ? Math.min(MAX_CHAIN_JUMPS, upgradeRank('chain')) : 0,
         chainVisited: [targetIndex],
-        waveBonus: Math.min(MAX_WAVE_BONUS, game.upgrades.wave * WAVE_RADIUS_STEP),
+        waveBonus: Math.min(MAX_WAVE_BONUS, upgradeRank('wave') * WAVE_RADIUS_STEP),
         resolved: false
       });
       fusionHands.forEach(item => {
@@ -1945,7 +2005,8 @@
       clearHandActions();
       setState('loopTransition', now);
       updateHud();
-      say(`LOOP ${completedLoop} COMPLETE`, `CHAIN Lv.${game.upgrades.chain} / WAVE Lv.${game.upgrades.wave} / NEXT MAX ${maxIncomingCount()} PULSES`);
+      const chosen = UPGRADES[game.lastUpgrade];
+      say(`LOOP ${completedLoop} COMPLETE`, `${chosen?.code || 'RETURN'} Lv.${upgradeRank(game.lastUpgrade)} / NEXT MAX ${maxIncomingCount()} PULSES`);
       game.nextAt = now + 2200;
       tone(120, 0.18, 0.05);
       setTimeout(() => tone(480, 0.22, 0.045), 120);
@@ -1960,9 +2021,38 @@
       });
     }
 
+    function rollUpgradeOffers() {
+      const available = Object.keys(UPGRADES).filter(key => upgradeRank(key) < UPGRADES[key].max);
+      const previous = [...game.upgradeOffers].sort().join('|');
+      const pairs = [];
+      for (let a = 0; a < available.length; a++) {
+        for (let b = a + 1; b < available.length; b++) {
+          const pair = [available[a], available[b]];
+          if (available.length === 2 || [...pair].sort().join('|') !== previous) pairs.push(pair);
+        }
+      }
+      // POWER and LIFE remain useful without a level cap, so two choices always exist.
+      const pair = pairs[Math.floor(Math.random() * pairs.length)];
+      return Math.random() < 0.5 ? [...pair] : [...pair].reverse();
+    }
+
+    function renderUpgradeOffers() {
+      game.upgradeOffers.forEach((key, index) => {
+        const option = UPGRADES[key], rank = upgradeRank(key);
+        ui.upgradeCards[index].style.setProperty('--accent', option.color);
+        ui.upgradeCards[index].setAttribute('aria-label', option.name);
+        ui.upgradeIcons[index].className = `upgrade-icon ${key}-icon`;
+        ui.upgradeNames[index].textContent = option.name;
+        ui.upgradeDescriptions[index].textContent = option.describe(rank);
+        ui.upgradeLevels[index].textContent = `Lv.${rank} → ${rank + 1}${Number.isFinite(option.max) ? ` / MAX ${option.max}` : ''}`;
+      });
+      const build = Object.keys(UPGRADES).filter(key => upgradeRank(key)).map(key => `${UPGRADES[key].code} ${upgradeRank(key)}`);
+      ui.upgradeBuild.textContent = build.length ? `BUILD // ${build.join(' · ')}` : '6 TYPES // RANDOM 2 CHOICES';
+    }
+
     function beginUpgradeChoice(now) {
       if (game.phase !== 'boss-destroyed') return;
-      const healed = Math.min(BOSS_RECOVERY, 100 - game.playerHp);
+      const healed = Math.max(0, Math.min(BOSS_RECOVERY, playerMaxHp() - game.playerHp));
       game.playerHp += healed;
       game.phase = 'upgrade';
       game.nextAt = Infinity;
@@ -1971,13 +2061,9 @@
       game.upgradeArmed = false;
       game.upgradeReadyAt = performance.now() + 500;
       ui.upgrade.hidden = false;
-      ui.upgradeRecovery.textContent = healed ? `HP +${healed} RECOVERED  /  ${Math.round(game.playerHp)} / 100` : 'HP FULL  /  100 / 100';
-      const nextChain = Math.min(MAX_CHAIN_JUMPS, game.upgrades.chain + 1);
-      const nextWave = Math.min(MAX_WAVE_BONUS, (game.upgrades.wave + 1) * WAVE_RADIUS_STEP);
-      ui.upgradeDescriptions[0].textContent = `強返球が別の敵へ${nextChain}回連鎖\n強返球の威力 +${UPGRADE_DAMAGE}`;
-      ui.upgradeDescriptions[1].textContent = `強返球の弾消し範囲 +${Math.round(nextWave / POWER_CLEAR_RADIUS * 100)}%\n強返球の威力 +${UPGRADE_DAMAGE}`;
-      ui.upgradeLevels[0].textContent = `CHAIN Lv.${game.upgrades.chain} → ${game.upgrades.chain + 1}`;
-      ui.upgradeLevels[1].textContent = `WAVE Lv.${game.upgrades.wave} → ${game.upgrades.wave + 1}`;
+      ui.upgradeRecovery.textContent = `${healed ? `HP +${healed} RECOVERED` : 'HP FULL'}  /  ${Math.round(game.playerHp)} / ${playerMaxHp()}`;
+      game.upgradeOffers = rollUpgradeOffers();
+      renderUpgradeOffers();
       ui.upgradeProgress.forEach(bar => { bar.style.width = '0%'; });
       ui.upgradeCards.forEach(card => card.classList.remove('is-targeted'));
       ui.upgradeHelp.textContent = '手をいったん枠の外へ。選ぶ枠で片手を1秒キープ。';
@@ -1989,8 +2075,11 @@
 
     function selectUpgrade(index, now = game.time) {
       if (game.state !== 'upgrade' || ![0, 1].includes(index)) return false;
-      const key = index === 0 ? 'chain' : 'wave';
-      game.upgrades[key] += 1;
+      const key = game.upgradeOffers[index];
+      if (!UPGRADES[key] || upgradeRank(key) >= UPGRADES[key].max) return false;
+      game.upgrades[key] = upgradeRank(key) + 1;
+      game.lastUpgrade = key;
+      if (key === 'vitality') game.playerHp = Math.min(playerMaxHp(), game.playerHp + VITALITY_HP_STEP);
       burst(W * (index ? 0.72 : 0.28), H * 0.5, 65);
       beginLoopTransition(now);
       return true;
@@ -2606,15 +2695,17 @@
           continue;
         }
         game.volleyMissed += 1;
-        game.lastDamage = enemyShot.damage;
-        game.playerHp = Math.max(0, game.playerHp - enemyShot.damage);
-        subtractScore(enemyShot.damage * 12);
+        const damage = Math.max(1, Math.round(enemyShot.damage * (1 - armorReduction())));
+        game.lastDamage = damage;
+        game.playerHp = Math.max(0, game.playerHp - damage);
+        subtractScore(damage * 12);
         game.hurtUntil = performance.now() + (game.phase === 'boss' ? 260 : 420);
         updateHud();
         if (game.phase === 'boss') {
-          say(`OMEGA PULSE IMPACT / ${enemyShot.damage} DAMAGE`, 'CORE RECHARGING');
+          say(`OMEGA PULSE IMPACT / ${damage} DAMAGE`, upgradeRank('armor') ? `ARMOR BLOCKED ${enemyShot.damage - damage} DMG` : 'CORE RECHARGING');
         } else {
-          say(`${enemyShot.damage} DAMAGE`, game.playerHp > 0 ? '姿勢を戻して再同期' : 'SESSION FAILED');
+          say(`${damage} DAMAGE`, game.playerHp <= 0 ? 'SESSION FAILED'
+            : upgradeRank('armor') ? `ARMOR BLOCKED ${enemyShot.damage - damage} DMG` : '姿勢を戻して再同期');
         }
         tone(70, 0.16, 0.035);
       }
@@ -3338,7 +3429,8 @@
       ctx.fillText(`UNITS ${activeEnemyLimit()} / BOSS HP ${bossMaxHp()} / INCOMING MAX ${maxIncomingCount()}`, W * 0.5, H * 0.57);
       ctx.fillStyle = '#ffffff';
       ctx.font = '700 15px ui-monospace, monospace';
-      ctx.fillText(`CHAIN Lv.${game.upgrades.chain}  /  WAVE Lv.${game.upgrades.wave}  /  POWER +${(game.upgrades.chain + game.upgrades.wave) * UPGRADE_DAMAGE}`, W * 0.5, H * 0.64);
+      const chosen = UPGRADES[game.lastUpgrade];
+      ctx.fillText(`${chosen?.name || 'RETURN'} Lv.${upgradeRank(game.lastUpgrade)}  /  MAX HP ${playerMaxHp()}`, W * 0.5, H * 0.64, W * 0.9);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
