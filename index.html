@@ -202,12 +202,14 @@
       text-align: right;
     }
 
-    .target-hud .health-value { color: var(--pink); }
+    .target-hud .health-row { flex-direction: column; gap: 5px; }
+    .target-hud .health-value { color: var(--pink); white-space: nowrap; }
 
     .squad-health {
       display: flex;
       align-items: center;
       gap: 3px;
+      max-width: min(38vw, 480px);
     }
 
     .unit-health-track {
@@ -867,6 +869,35 @@
     const MAX_ACTIVE_ENEMIES = 5;
     const BOSS_BASE_HP = 180;
     const BOSS_HP_PER_LOOP = 60;
+    const BOSS_TYPES = [
+      { id: 'omega', name: 'OMEGA WING', label: '左右交互', hint: '左右からの弾を、交互にRETURN',
+        color: '#ff2a6d', secondary: '#2de2e6', colorIndex: 1, width: 160, height: 70,
+        motion: { x: 0.14, y: 0.035, speed: 0.0008, depth: 0.00105 },
+        sequence: [
+          { area: 'left', port: 0, kind: 'normal' }, { area: 'right', port: 1, kind: 'normal' },
+          { area: 'left', port: 0, kind: 'normal' }, { area: 'right', port: 1, kind: 'normal' }
+        ] },
+      { id: 'prism', name: 'PRISM TOWER', label: '上下の時間差', hint: '上下の弾を、時間差でRETURN',
+        color: '#2de2e6', secondary: '#f9f871', colorIndex: 0, width: 92, height: 140,
+        motion: { x: 0.055, y: 0.1, speed: 0.0011, depth: 0.00078 },
+        sequence: [
+          { area: 'top', port: 0, kind: 'normal', gap: 550 }, { area: 'bottom', port: 1, kind: 'normal', pause: 1.4 },
+          { area: 'bottom', port: 1, kind: 'normal', gap: 550 }, { area: 'top', port: 0, kind: 'normal', pause: 1.4 }
+        ] },
+      { id: 'orbit', name: 'ORBIT RING', label: '四隅・大小弾', hint: '四隅を巡る大小の弾をRETURN',
+        color: '#9b5de5', secondary: '#72f1b8', colorIndex: 4, width: 150, height: 150,
+        motion: { x: 0.1, y: 0.075, speed: 0.00095, depth: 0.00135 },
+        sequence: [
+          { area: 'topLeft', port: 0, kind: 'heavy', gap: 750 }, { area: 'topRight', port: 1, kind: 'light', pause: 1.3 },
+          { area: 'bottomRight', port: 2, kind: 'heavy', gap: 750 }, { area: 'bottomLeft', port: 3, kind: 'light', pause: 1.3 }
+        ] }
+    ];
+    const BOSS_IMPACT_REGIONS = {
+      left: [0.12, 0.42, 0.2, 0.8], right: [0.58, 0.88, 0.2, 0.8],
+      top: [0.18, 0.82, 0.18, 0.38], bottom: [0.18, 0.82, 0.62, 0.82],
+      topLeft: [0.14, 0.36, 0.2, 0.38], topRight: [0.64, 0.86, 0.2, 0.38],
+      bottomRight: [0.64, 0.86, 0.62, 0.8], bottomLeft: [0.14, 0.36, 0.62, 0.8]
+    };
     const FUSION_DISTANCE = 82;
     const BATTLE_PROFILE = {
       maxIncoming: 2,
@@ -879,7 +910,7 @@
     const labels = {
       idle: 'IDLE', intro: 'LINKED', advance: 'FORWARD DRIVE', encounter: 'CONTACT', read: 'CORE CHARGE',
       attack: 'PULSE INCOMING', counter: 'RETURN WINDOW', returning: 'PULSE RETURN', recover: 'COOL DOWN',
-      bossWarning: 'THREAT ALERT', bossIntro: 'OMEGA ONLINE',
+      bossWarning: 'THREAT ALERT', bossIntro: 'BOSS ONLINE',
       finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', bossDefeated: 'CORE COLLAPSE', loopTransition: 'LOOP SHIFT', win: 'COMPLETE', lose: 'FAILED',
       calibrate: 'CALIBRATION', upgrade: 'CORE SALVAGE'
     };
@@ -901,7 +932,7 @@
       travel: 0, lastUpdateAt: performance.now(), bossPending: false,
       kills: 0, runStartedAt: 0, bossAt: 0, lastTimerSecond: -1,
       spawnSerial: 0, nextEnemySpawnAt: 0, nextEnemyShotAt: 0, shotSerial: 0,
-      fusionSerial: 0, bossPortIndex: 0, score: 0,
+      fusionSerial: 0, bossAttackIndex: 0, score: 0,
       attackers: [], attackOffsets: [], playerShots: [], exchangeClosing: false,
       stats: { guards: 0, strikes: 0, wrong: 0, early: 0, damage: 0, maxPower: 0 }
     };
@@ -1139,6 +1170,20 @@
       return BOSS_BASE_HP + Math.max(0, loop - 1) * BOSS_HP_PER_LOOP;
     }
 
+    function bossProfile(loop = game.loop) {
+      return BOSS_TYPES[(Math.max(1, Math.floor(loop)) - 1) % BOSS_TYPES.length];
+    }
+
+    function enemyBossProfile(enemy) {
+      return BOSS_TYPES.find(type => type.id === enemy?.bossType) || bossProfile();
+    }
+
+    function bossAttackStep() {
+      const type = enemyBossProfile(game.enemies[0]);
+      const index = game.bossAttackIndex % type.sequence.length;
+      return { ...type.sequence[index], pattern: `boss-${type.id}`, bossType: type.id, bossStep: index };
+    }
+
     function loopFireScale() {
       return Math.max(0.42, Math.pow(0.82, Math.max(0, game.loop - 1)));
     }
@@ -1182,7 +1227,7 @@
       if (game.phase === 'boss') {
         const boss = game.enemies[0];
         const ratio = boss ? Math.max(0, boss.hp / boss.maxHp) : 0;
-        ui.targetName.textContent = `OMEGA CORE / LOOP ${game.loop}`;
+        ui.targetName.textContent = `${enemyBossProfile(boss).name} / LOOP ${game.loop}`;
         ui.enemyHp.textContent = `BOSS ${Math.ceil(boss?.hp || 0)} / ${boss?.maxHp || bossMaxHp()} HP · MAX ${maxIncomingCount()}`;
         ui.enemyHealths.forEach((bar, index) => {
           const segments = ui.enemyHealths.length;
@@ -1192,7 +1237,7 @@
           bar.parentElement?.classList.toggle('off', segmentRatio <= 0);
         });
       } else if (game.phase === 'boss-destroyed') {
-        ui.targetName.textContent = `OMEGA CORE / DESTROYED`;
+        ui.targetName.textContent = `${bossProfile().name} / DESTROYED`;
         ui.enemyHp.textContent = `LOOP ${game.loop} CLEAR`;
         ui.enemyHealths.forEach(bar => {
           bar.parentElement.style.display = '';
@@ -1295,6 +1340,7 @@
       game.nextEnemyShotAt = now + 1100;
       game.shotSerial = 0;
       game.fusionSerial = 0;
+      game.bossAttackIndex = 0;
       game.activeEnemy = 0;
       game.shooterCursor = 0;
       game.finalIndex = 0;
@@ -1426,8 +1472,7 @@
       game.exchangeClosing = false;
       setState('read', now);
       if (game.phase === 'boss') {
-        game.bossPortIndex = Math.floor(Math.random() * 3);
-        say('OMEGA CORE / BARRAGE CHARGE', '複数の接近軌道を注視');
+        say(`${bossProfile().name} / CORE CHARGE`, bossProfile().hint);
         game.nextAt = now + 780;
       } else {
         say(`CONTACT ${game.attackers.map(index => index + 1).join(' + ')} / CORE CHARGE`, '弾の接近軌道を注視');
@@ -1435,13 +1480,17 @@
       }
     }
 
-    function chooseImpact(origin, occupied = [], collisionTravel = 0.45, side = 0) {
+    function chooseImpact(origin, occupied = [], collisionTravel = 0.45, side = 0, area = null) {
+      const region = BOSS_IMPACT_REGIONS[area];
       const hands = visibleHands().map(hand => ({ x: hand.x, y: hand.y }));
       if (!hands.length) hands.push({ x: 0.5, y: 0.62 });
       let impact = { x: 0.2, y: 0.52 };
       let impactFound = false;
       for (let attempt = 0; attempt < 28; attempt++) {
-        const candidate = {
+        const candidate = region ? {
+          x: region[0] + Math.random() * (region[1] - region[0]),
+          y: region[2] + Math.random() * (region[3] - region[2])
+        } : {
           x: side < 0 ? 0.12 + Math.random() * 0.3 : side > 0 ? 0.58 + Math.random() * 0.3 : 0.08 + Math.random() * 0.84,
           y: side ? 0.2 + Math.random() * 0.6 : 0.12 + Math.random() * 0.76
         };
@@ -1466,7 +1515,9 @@
           { x: 0.12, y: 0.5 }, { x: 0.88, y: 0.52 },
           { x: 0.14, y: 0.84 }, { x: 0.5, y: 0.86 }, { x: 0.88, y: 0.82 }
         ];
-        if (side) anchors = anchors.filter(point => side < 0 ? point.x < 0.5 : point.x > 0.5)
+        if (region) anchors = [region[0], (region[0] + region[1]) / 2, region[1]].flatMap(x =>
+          [region[2], (region[2] + region[3]) / 2, region[3]].map(y => ({ x, y })));
+        else if (side) anchors = anchors.filter(point => side < 0 ? point.x < 0.5 : point.x > 0.5)
           .map(point => ({ x: Math.max(0.12, Math.min(0.88, point.x)), y: Math.max(0.2, Math.min(0.8, point.y)) }));
         impact = anchors.reduce((best, candidate) => {
           const distances = hands.map(hand => Math.hypot(candidate.x - hand.x, candidate.y - hand.y));
@@ -1478,13 +1529,18 @@
       return impact;
     }
 
-    function bossPorts(pose, now, count = 5) {
-      return Array.from({ length: count }, (_, index) => {
-        const angle = now * 0.0008 + index / count * Math.PI * 2;
-        return {
-          x: pose.x + Math.cos(angle) * 128 * pose.scale,
-          y: pose.y + Math.sin(angle) * 42 * pose.scale
-        };
+    function bossPoint(pose, x, y) {
+      const angle = pose.roll || 0;
+      return { x: pose.x + (x * Math.cos(angle) - y * Math.sin(angle)) * pose.scale,
+        y: pose.y + (x * Math.sin(angle) + y * Math.cos(angle)) * pose.scale };
+    }
+
+    function bossPorts(pose, now, type = enemyBossProfile(game.enemies[0])) {
+      if (type.id === 'omega') return [-152, 152].map(x => bossPoint(pose, x, 0));
+      if (type.id === 'prism') return [-132, 132].map(y => bossPoint(pose, 0, y));
+      return Array.from({ length: 4 }, (_, index) => {
+        const angle = now * 0.00055 - Math.PI * 0.75 + index * Math.PI / 2;
+        return bossPoint(pose, Math.cos(angle) * 134, Math.sin(angle) * 134);
       });
     }
 
@@ -1538,11 +1594,13 @@
       let damage;
       const curve = 1.4;
       if (game.phase === 'boss') {
+        patternStep ||= bossAttackStep();
+        const type = enemyBossProfile(game.enemies[0]);
         const pose = enemyPose(now, 0);
-        const ports = bossPorts(pose, now, 5);
-        const portIndex = game.shotSerial % ports.length;
+        const ports = bossPorts(pose, now, type);
+        const portIndex = (patternStep.port ?? game.bossAttackIndex) % ports.length;
         port = ports[portIndex];
-        color = portIndex;
+        color = (type.colorIndex + portIndex) % COLORS.length;
         flight = 4100;
         catchWindow = 2800;
         damage = profile.bossDamage;
@@ -1567,7 +1625,7 @@
       catchWindow += pulseType.catchDelta;
       const catchStartTravel = Math.pow((flight - catchWindow) / flight, curve);
       const lesson = game.tutorial.active ? game.tutorial.step : null;
-      let impact = chooseImpact(origin, occupied, catchStartTravel, patternStep?.side || 0);
+      let impact = chooseImpact(origin, occupied, catchStartTravel, patternStep?.side || 0, patternStep?.area);
       if (lesson) {
         const hand = visibleHands()[lesson === 'catch' ? 1 : 0] || visibleHands()[0];
         impact = {
@@ -1594,6 +1652,8 @@
         kind,
         sizeScale: pulseType.size,
         pattern: patternStep?.pattern || 'tutorial',
+        area: patternStep?.area || null,
+        bossType: patternStep?.bossType || null,
         contact: null,
         resolved: false,
         captured: false,
@@ -1611,7 +1671,7 @@
       const profile = BATTLE_PROFILE;
       const maxIncoming = maxIncomingCount();
       if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
-      const step = game.tutorial.active ? null : attackPatternStep();
+      const step = game.tutorial.active ? null : game.phase === 'boss' ? bossAttackStep() : attackPatternStep();
       if (!spawnEnemyShot(now, step)) {
         game.nextEnemyShotAt = now + 180;
         return;
@@ -1620,7 +1680,10 @@
       const scale = loopFireScale();
       const interval = Math.max(MIN_FIRE_INTERVAL, (minimum + Math.random() * (maximum - minimum)) * scale);
       let gap = interval;
-      if (step) {
+      if (step?.bossType) {
+        gap = step.gap || interval * (step.pause || 1);
+        game.bossAttackIndex += 1;
+      } else if (step) {
         const pattern = game.attackPattern;
         const rhythm = ATTACK_PATTERNS[pattern.id];
         gap = rhythm.pairedGap && pattern.index % 2 === 0 ? rhythm.pairedGap : interval * rhythm.pauseScale;
@@ -1637,7 +1700,8 @@
       game.exchangeClosing = false;
       setState('attack', now);
       game.nextEnemyShotAt = now;
-      say(game.phase === 'boss' ? 'OMEGA BARRAGE INBOUND' : 'PULSE STREAM INBOUND', '弾の接近に合わせてRETURN');
+      say(game.phase === 'boss' ? `${bossProfile().name} / ${bossProfile().label}` : 'PULSE STREAM INBOUND',
+        game.phase === 'boss' ? bossProfile().hint : '弾の接近に合わせてRETURN');
       game.nextAt = Infinity;
       updateEnemyFire(now);
       tone(380, 0.05);
@@ -1919,7 +1983,7 @@
         setTimeout(() => tone(180, 0.18, 0.04), 70);
         setTimeout(() => tone(45, 0.32, 0.05), 140);
         const alive = game.enemies.filter(unit => unit.hp > 0).length;
-        say(enemy.boss ? 'OMEGA CORE DESTROYED' : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? 'CORE COLLAPSE DETECTED' : `TOTAL ${game.kills} / ${alive} ACTIVE`);
+        say(enemy.boss ? `${enemyBossProfile(enemy).name} DESTROYED` : `UNIT ${playerShot.targetIndex + 1} DESTROYED`, enemy.boss ? 'CORE COLLAPSE DETECTED' : `TOTAL ${game.kills} / ${alive} ACTIVE`);
       } else {
         if (enemy.boss) {
           destructionEffects.push({ x: target.x, y: target.y, born: effectNow, bossImpact: true, power: effectPower });
@@ -1928,7 +1992,7 @@
         } else {
           burst(target.x, target.y, Math.round(26 + effectPower * 38));
         }
-        say(`${playerShot.handId.toUpperCase()} RETURN / ${playerShot.damage} DAMAGE`, enemy.boss ? `OMEGA HP ${Math.round(enemy.hp)}` : `UNIT ${playerShot.targetIndex + 1} HP ${Math.round(enemy.hp)}`);
+        say(`${playerShot.handId.toUpperCase()} RETURN / ${playerShot.damage} DAMAGE`, enemy.boss ? `${enemyBossProfile(enemy).name} / HP ${Math.round(enemy.hp)}` : `UNIT ${playerShot.targetIndex + 1} HP ${Math.round(enemy.hp)}`);
       }
       if (game.tutorial.active && playerShot.lesson === 'return') {
         game.tutorial.step = 'catch';
@@ -1987,7 +2051,7 @@
       game.hitUntil = Math.max(game.hitUntil, performance.now() + 500);
       game.nextAt = now + 1800;
       updateHud();
-      say('OMEGA CORE DESTROYED', `LOOP ${game.loop} CLEAR / COLLAPSE IN PROGRESS`);
+      say(`${bossProfile().name} DESTROYED`, `LOOP ${game.loop} CLEAR / COLLAPSE IN PROGRESS`);
       tone(58, 0.38, 0.06);
       setTimeout(() => tone(42, 0.5, 0.055), 260);
       setTimeout(() => tone(260, 0.28, 0.035), 720);
@@ -2128,6 +2192,7 @@
 
     function beginBossWarning(now) {
       resetAttackPatterns();
+      game.bossAttackIndex = 0;
       game.phase = 'boss-warning';
       game.warningAnnounced = false;
       game.enemyShots = [];
@@ -2143,7 +2208,9 @@
     function spawnBoss(now) {
       game.phase = 'boss';
       const maxHp = bossMaxHp();
-      game.enemies = [{ hp: maxHp, maxHp, phase: 0.8, boss: true }];
+      const type = bossProfile();
+      game.enemies = [{ hp: maxHp, maxHp, phase: 0.8, boss: true, bossType: type.id }];
+      game.bossAttackIndex = 0;
       game.activeEnemy = 0;
       game.shooterCursor = 0;
       game.enemyShots = [];
@@ -2151,7 +2218,7 @@
       clearHandActions();
       updateHud();
       setState('bossIntro', now);
-      say(`OMEGA CORE ONLINE / LOOP ${game.loop}`, `BOSS HP ${maxHp} / MAX ${maxIncomingCount()} PULSES`);
+      say(`${type.name} ONLINE / LOOP ${game.loop}`, `${type.label} / HP ${maxHp} / MAX ${maxIncomingCount()} PULSES`);
       game.nextAt = now + 1450;
       tone(48, 0.55, 0.06);
       setTimeout(() => tone(96, 0.35, 0.04), 130);
@@ -2187,7 +2254,7 @@
       ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
       if (won) {
         const clean = game.stats.wrong === 0 && game.stats.early === 0;
-        ui.resultCode.textContent = 'OMEGA ELIMINATED';
+        ui.resultCode.textContent = `${bossProfile().name} ELIMINATED`;
         ui.resultTitle.textContent = 'BOSS DOWN';
         ui.resultRank.textContent = `SCORE ${Math.round(game.score).toLocaleString()}`;
         ui.resultText.textContent = `${clean ? 'CLEAN TRACE' : 'TRACE ACCEPTED'} / LOOP ${game.loop}`;
@@ -2223,7 +2290,7 @@
       if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'bossWarning' && !game.warningAnnounced && now - game.stateAt >= 650) {
         game.warningAnnounced = true;
-        say('WARNING / MASSIVE SIGNAL', 'OMEGA CLASS APPROACHING');
+        say(`WARNING / ${bossProfile().name}`, bossProfile().hint);
         tone(82, 0.22, 0.05);
         setTimeout(() => tone(62, 0.28, 0.055), 160);
       }
@@ -2702,7 +2769,7 @@
         game.hurtUntil = performance.now() + (game.phase === 'boss' ? 260 : 420);
         updateHud();
         if (game.phase === 'boss') {
-          say(`OMEGA PULSE IMPACT / ${damage} DAMAGE`, upgradeRank('armor') ? `ARMOR BLOCKED ${enemyShot.damage - damage} DMG` : 'CORE RECHARGING');
+          say(`${bossProfile().name} / ${damage} DAMAGE`, upgradeRank('armor') ? `ARMOR BLOCKED ${enemyShot.damage - damage} DMG` : 'CORE RECHARGING');
         } else {
           say(`${damage} DAMAGE`, game.playerHp <= 0 ? 'SESSION FAILED'
             : upgradeRank('armor') ? `ARMOR BLOCKED ${enemyShot.damage - damage} DMG` : '姿勢を戻して再同期');
@@ -2716,21 +2783,28 @@
       const effectNow = performance.now();
       const enemy = game.enemies[index] || { phase: index * 2.1 };
       if (enemy.boss) {
+        const type = enemyBossProfile(enemy), motion = type.motion;
         const emergence = game.state === 'bossIntro'
           ? Math.min(1, Math.max(0, (now - game.stateAt) / 1200))
           : 1;
-        const depthWave = (Math.sin(now * 0.00105 + enemy.phase) + 1) * 0.5;
+        const depthWave = (Math.sin(now * motion.depth + enemy.phase) + 1) * 0.5;
         const arrival = Math.pow(emergence, 1.45);
         const depth = Math.min(1, 0.04 + arrival * (0.74 + depthWave * 0.22));
         const displayDepth = Math.min(1, depth + arrival * (enemyViewBoost - 1) * 0.16);
-        const targetX = W * (0.5 + Math.sin(now * 0.00078) * 0.1 + Math.sin(now * 0.00163 + 1.2) * 0.034);
-        const targetY = H * (0.44 + Math.sin(now * 0.00096 + 1.3) * 0.065 + Math.cos(now * 0.00171) * 0.022);
+        const targetX = W * (0.5 + Math.sin(now * motion.speed) * motion.x);
+        const targetY = H * (0.44 + Math.sin(now * motion.speed + (type.id === 'orbit' ? Math.PI / 2 : 1.3)) * motion.y);
         let pose = {
           x: VANISH.x + (targetX - VANISH.x) * displayDepth,
           y: VANISH.y + (targetY - VANISH.y) * displayDepth,
           scale: (1.18 + depthWave * 0.38) * (0.18 + displayDepth * 0.88) * enemyViewBoost,
-          depth: displayDepth
+          depth: displayDepth,
+          roll: type.id === 'orbit' ? 0 : Math.sin(now * motion.speed) * 0.04
         };
+        pose.scale = Math.min(pose.scale, W * 0.36 / type.width, H * 0.27 / type.height);
+        const marginX = (type.width + type.height * 0.04) * pose.scale + 12;
+        const marginY = (type.height + type.width * 0.04) * pose.scale + 12;
+        pose.x = Math.max(marginX, Math.min(W - marginX, pose.x));
+        pose.y = Math.max(H * 0.12 + marginY, Math.min(H * 0.88 - marginY, pose.y));
         if (game.state === 'returning' && game.returnTo && index === game.returnTarget) pose = { ...game.returnTo };
         if (effectNow < game.targetHitUntil && index === game.returnTarget) pose.x += Math.sin(effectNow * 0.12) * 11;
         return pose;
@@ -2962,13 +3036,14 @@
       ctx.lineWidth = 1;
       ctx.strokeRect(shot.x - size / 2 + 7, shot.y - size / 2 + 7, size - 14, size - 14);
       ctx.globalAlpha = 1;
+      const labelY = shot.y - size / 2 - 17 < 80 / viewScale ? shot.y + size / 2 + 2 : shot.y - size / 2 - 17;
       ctx.fillStyle = '#020409';
-      ctx.fillRect(shot.x - 29, shot.y - size / 2 - 17, 58, 16);
+      ctx.fillRect(shot.x - 29, labelY, 58, 16);
       ctx.fillStyle = color;
       ctx.font = '900 12px ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('RETURN', shot.x, shot.y - size / 2 - 9);
+      ctx.fillText('RETURN', shot.x, labelY + 8);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
@@ -2992,21 +3067,57 @@
       }
     }
 
-    function drawBossMesh(pose, spin, active) {
+    function drawBossMesh(pose, now, active, type = enemyBossProfile(game.enemies[0])) {
+      const spin = now * 0.00045;
       const visibility = 0.28 + (pose.depth ?? 1) * 0.72;
-      drawUfoMesh(pose.x, pose.y, pose.scale, spin * 0.72, visibility);
-      drawUfoMesh(pose.x, pose.y, pose.scale * 0.72, -spin * 1.18, visibility);
-      polygon(pose.x, pose.y, 118 * pose.scale, 10, spin, COLORS[1], active ? 3 : 2, 0.86 * visibility);
-      polygon(pose.x, pose.y, 86 * pose.scale, 6, -spin * 1.5, COLORS[4], 2, 0.82 * visibility);
-      polygon(pose.x, pose.y, 56 * pose.scale, 8, spin * 2.25, COLORS[2], 3, 0.96 * visibility);
-      joint({ x: pose.x, y: pose.y }, '#ffffff', 10 * pose.scale);
-      for (let arm = 0; arm < 8; arm++) {
-        const angle = spin * 0.8 + arm * Math.PI / 4;
-        const a = { x: pose.x + Math.cos(angle) * 124 * pose.scale, y: pose.y + Math.sin(angle) * 55 * pose.scale };
-        const b = { x: pose.x + Math.cos(angle) * 154 * pose.scale, y: pose.y + Math.sin(angle) * 68 * pose.scale };
-        line(a, b, COLORS[arm % 5], 2, 0.82 * visibility);
-        joint(b, COLORS[(arm + 2) % 5], 4 * pose.scale);
+      const point = (x, y) => bossPoint(pose, x, y);
+      const edge = (a, b, color = type.secondary, width = 1, alpha = 0.58) =>
+        line(point(...a), point(...b), color, width, alpha * visibility);
+      const outline = (coords, color = type.color, width = 2, alpha = 0.9) => {
+        coords.forEach((p, i) => edge(p, coords[(i + 1) % coords.length], color, width, alpha));
+      };
+      if (type.id === 'omega') {
+        const hull = [[-152,0],[-88,-46],[-48,-32],[0,-64],[48,-32],[88,-46],[152,0],[88,46],[48,32],[0,64],[-48,32],[-88,46]];
+        outline(hull, type.color, active ? 3 : 2);
+        hull.forEach((p, i) => { if (i % 3) edge(p, [0,0]); });
+        for (const side of [-1, 1]) {
+          outline([[side*152,0],[side*88,-26],[side*52,0],[side*88,26]], type.secondary, 1, 0.72);
+          edge([side*52,0],[side*152,0], type.secondary, 2, 0.8);
+        }
+        polygon(pose.x, pose.y, 43 * pose.scale, 6, spin, type.secondary, 2, visibility);
+        polygon(pose.x, pose.y, 27 * pose.scale, 4, -spin, '#ffffff', 1, visibility);
+      } else if (type.id === 'prism') {
+        const hull = [[0,-132],[60,-42],[86,0],[60,42],[0,132],[-60,42],[-86,0],[-60,-42]];
+        outline(hull, type.color, active ? 3 : 2);
+        outline([[0,-98],[42,0],[0,98],[-42,0]], type.secondary, 2, 0.82);
+        edge([0,-132],[0,132], type.color, 1, 0.5);
+        for (const y of [-74, -36, 36, 74]) {
+          const width = 70 * (1 - Math.abs(y) / 132);
+          edge([-width,y],[width,y], type.color, 1, 0.45);
+          edge([-width,y],[0,0]); edge([width,y],[0,0]);
+        }
+        edge([-86,0],[86,0], type.secondary, 2, 0.8);
+        polygon(pose.x, pose.y, 23 * pose.scale, 4, Math.PI / 4, '#ffffff', 2, visibility);
+      } else {
+        const outer = [], inner = [];
+        for (let i = 0; i < 16; i++) {
+          const angle = spin * 0.8 + i * Math.PI / 8;
+          outer.push([Math.cos(angle) * 118, Math.sin(angle) * 118]);
+          inner.push([Math.cos(angle) * 91, Math.sin(angle) * 91]);
+        }
+        outline(outer, type.color, active ? 3 : 2);
+        outline(inner, type.secondary, 1, 0.8);
+        outer.forEach((p, i) => edge(p, inner[(i + 1) % inner.length], type.color, 1, 0.5));
+        const ports = bossPorts(pose, now, type);
+        ports.forEach((port, index) => {
+          const a = { x: pose.x + (port.x - pose.x) * 0.55, y: pose.y + (port.y - pose.y) * 0.55 };
+          line(a, port, type.secondary, 2, 0.7 * visibility);
+          polygon(port.x, port.y, 13 * pose.scale, 4, spin + index, type.secondary, 2, visibility);
+        });
+        polygon(pose.x, pose.y, 31 * pose.scale, 6, -spin * 1.6, type.color, 2, visibility);
       }
+      joint({ x: pose.x, y: pose.y }, '#ffffff', 7 * pose.scale);
+      bossPorts(pose, now, type).forEach(port => joint(port, type.secondary, 4 * pose.scale));
     }
 
     function drawPortCharge(x, y, radius, progress, spin, colorIndex) {
@@ -3030,11 +3141,15 @@
         const pose = enemyPose(now, index);
         const active = game.attackers.includes(index) || index === game.activeEnemy;
         if (enemy.boss) {
-          drawBossMesh(pose, spin, active);
+          const type = enemyBossProfile(enemy);
+          drawBossMesh(pose, now, active, type);
           if ((pose.depth ?? 1) > 0.46) {
-            ctx.fillStyle = '#ff5570';
-            ctx.font = '700 12px ui-monospace, monospace';
-            ctx.fillText(`BOSS_OMEGA / HP ${Math.ceil(enemy.hp)} / ${enemy.maxHp}`, pose.x + 104 * pose.scale, pose.y - 82 * pose.scale);
+            ctx.save();
+            ctx.fillStyle = type.color;
+            ctx.font = '700 11px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(type.name, pose.x, pose.y + type.height * pose.scale + 20, W * 0.8);
+            ctx.restore();
           }
           return;
         }
@@ -3065,12 +3180,9 @@
         const progress = Math.min(1, elapsed / Math.max(1, game.nextAt - game.stateAt));
         if (game.phase === 'boss') {
           const pose = enemyPose(now, 0);
-          const ports = bossPorts(pose, now, 3);
-          [0, 1, 2].forEach(index => {
-            const portIndex = (game.bossPortIndex + index) % ports.length;
-            const bossPort = ports[portIndex];
-            pulseBall(bossPort.x, bossPort.y, (6 + progress * 12) * pose.scale, spin * 8 + index, portIndex);
-          });
+          const type = enemyBossProfile(game.enemies[0]);
+          bossPorts(pose, now, type).forEach((port, index) =>
+            drawPortCharge(port.x, port.y, (10 + progress * 12) * pose.scale, progress, spin * 3 + index, (type.colorIndex + index) % COLORS.length));
         } else {
           game.attackers.forEach((enemyIndex, index) => {
             const enemy = game.enemies[enemyIndex];
@@ -3401,7 +3513,10 @@
       ctx.fillText('WARNING', W * 0.5, H * 0.44);
       ctx.fillStyle = '#ff5570';
       ctx.font = '700 16px ui-monospace, monospace';
-      ctx.fillText(`OMEGA CLASS / CORE HP ${bossMaxHp()}`, W * 0.5, H * 0.56);
+      ctx.fillText(`${bossProfile().name} / HP ${bossMaxHp()}`, W * 0.5, H * 0.56, W * 0.84);
+      ctx.fillStyle = bossProfile().color;
+      ctx.font = '700 14px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillText(bossProfile().hint, W * 0.5, H * 0.63, W * 0.84);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
