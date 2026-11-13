@@ -277,6 +277,42 @@
 
     .modal[hidden] { display: none; }
 
+    .upgrade-modal { background: rgba(0, 2, 7, 0.86); padding: 18px; }
+    .upgrade-panel { width: min(720px, 100%); text-align: center; }
+    .upgrade-panel h2 { margin: 8px 0; font-size: clamp(24px, 5vw, 40px); color: #fff; }
+    .upgrade-recovery { color: var(--lime); font-size: 15px; margin: 10px 0 22px; }
+    .upgrade-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(12px, 3vw, 28px); }
+    .upgrade-option { --accent: var(--cyan); position: relative; padding: 22px 12px 16px; border: 2px solid #30404f; background: #030911; min-width: 0; }
+    .upgrade-option:nth-child(2) { --accent: var(--lime); }
+    .upgrade-option.is-targeted { border-color: var(--accent); background: #091c23; }
+    .upgrade-option h3 { color: var(--accent); margin: 16px 0 8px; font: 800 clamp(15px, 2.5vw, 23px) ui-sans-serif, system-ui, sans-serif; }
+    .upgrade-option p { min-height: 3.2em; color: #c1cbd8; font: 13px/1.6 ui-sans-serif, system-ui, sans-serif; white-space: pre-line; }
+    .upgrade-option small { display: block; color: #8490a8; font-size: 11px; margin-bottom: 12px; }
+    .upgrade-meter { height: 6px; background: #162333; }
+    .upgrade-meter > span { display: block; height: 100%; width: 0%; background: var(--accent); }
+    .upgrade-icon { height: 45px; width: 110px; margin: 0 auto; position: relative; color: var(--accent); }
+    .chain-icon::before { content: ''; position: absolute; left: 10px; right: 10px; top: 21px; border-top: 2px solid; }
+    .chain-icon i { position: absolute; width: 13px; height: 13px; top: 15px; border: 2px solid; background: #030911; transform: rotate(45deg); }
+    .chain-icon i:nth-child(1) { left: 6px; } .chain-icon i:nth-child(2) { left: 47px; } .chain-icon i:nth-child(3) { right: 6px; }
+    .wave-icon::before, .wave-icon::after { content: ''; position: absolute; border: 2px solid; left: 34px; top: 1px; width: 42px; height: 42px; }
+    .wave-icon::after { left: 47px; top: 14px; width: 16px; height: 16px; background: var(--accent); }
+    .upgrade-cursor { position: absolute; z-index: 2; width: 26px; height: 26px; margin: -13px; border: 2px solid #fff; background: #2de2e6; pointer-events: none; transform: rotate(45deg); }
+    .upgrade-cursor:nth-of-type(3) { background: #ff2a6d; }
+    .upgrade-help { margin: 18px auto 0; min-height: 3em; color: #d3dde8; font: 13px/1.65 ui-sans-serif, system-ui, sans-serif; }
+
+    @media (max-height: 520px) {
+      .upgrade-modal { padding: 10px 18px; }
+      .upgrade-panel .eyebrow { margin-bottom: 4px; font-size: 9px; }
+      .upgrade-panel h2 { margin: 4px 0; font-size: 24px; }
+      .upgrade-recovery { margin: 4px 0 10px; font-size: 12px; }
+      .upgrade-option { padding: 8px 12px; }
+      .upgrade-icon { display: none; }
+      .upgrade-option h3 { margin: 4px 0; font-size: 17px; }
+      .upgrade-option p { margin: 6px 0; min-height: 0; font-size: 12px; line-height: 1.4; }
+      .upgrade-option small { margin-bottom: 6px; }
+      .upgrade-help { margin-top: 8px; min-height: 1.6em; font-size: 12px; }
+    }
+
     .card {
       width: min(650px, 100%);
       max-height: 100%;
@@ -632,7 +668,8 @@
             画面に向けて両手を構え、奥から来る弾へ手を当ててRETURN。<br>
             柔らかく受け止めてから投げると、強力なPOWER RETURNになります。<br>
             最初の2発で操作をつかんだら、敵2機の連続戦へ。<br>
-            POWER RETURNの衝撃波は、近くの敵弾も消します。
+            POWER RETURNの衝撃波は、近くの敵弾も消します。<br>
+            ボスを倒すとHP回復と強化2択。同時飛来は最大4発。
           </p>
           <p class="eyebrow">LOOP 1 // 2 UNITS // MAX 2 PULSES</p>
           <div class="buttons">
@@ -670,6 +707,29 @@
         </div>
       </section>
 
+      <section class="modal upgrade-modal" id="upgradeModal" aria-label="ボス撃破の強化選択" hidden>
+        <div class="upgrade-panel">
+          <p class="eyebrow">CORE SALVAGED // CHOOSE YOUR RETURN</p>
+          <h2>次の一撃を、強く。</h2>
+          <p class="upgrade-recovery" id="upgradeRecovery"></p>
+          <div class="upgrade-options">
+            <div class="upgrade-option" id="upgradeChain">
+              <div class="upgrade-icon chain-icon" aria-hidden="true"><i></i><i></i><i></i></div>
+              <h3>連鎖返球</h3><p id="upgradeChainDescription"></p><small id="upgradeChainLevel"></small>
+              <div class="upgrade-meter"><span id="upgradeChainProgress"></span></div>
+            </div>
+            <div class="upgrade-option" id="upgradeWave">
+              <div class="upgrade-icon wave-icon" aria-hidden="true"></div>
+              <h3>弾消し範囲アップ</h3><p id="upgradeWaveDescription"></p><small id="upgradeWaveLevel"></small>
+              <div class="upgrade-meter"><span id="upgradeWaveProgress"></span></div>
+            </div>
+          </div>
+          <p class="upgrade-help" id="upgradeHelp">選ぶ枠へ片手を置いて、そのままキープ。</p>
+        </div>
+        <div class="upgrade-cursor" id="upgradeCursorLeft" hidden></div>
+        <div class="upgrade-cursor" id="upgradeCursorRight" hidden></div>
+      </section>
+
       <section class="modal" id="resultModal" hidden>
         <div class="card">
           <p class="eyebrow" id="resultCode">SEQUENCE COMPLETE</p>
@@ -682,7 +742,7 @@
     </main>
 
     <footer class="footer">
-      <span>CAMERA + DUAL HANDS ONLY　DIRECT RETURN OR SOFT CATCH　FLICK FOR POWER　EACH LOOP +1 PULSE</span>
+      <span>CAMERA + DUAL HANDS ONLY　DIRECT RETURN OR SOFT CATCH　BOSS REWARD: HEAL + UPGRADE　MAX 4 PULSES</span>
     </footer>
   </div>
 
@@ -717,6 +777,14 @@
       resultTitle: $('resultTitle'), resultRank: $('resultRank'), resultText: $('resultText'),
       resultGesture: $('resultGesture'), cameraStart: $('cameraStart'), startNote: $('startNote')
     };
+    ui.upgrade = $('upgradeModal');
+    ui.upgradeRecovery = $('upgradeRecovery');
+    ui.upgradeHelp = $('upgradeHelp');
+    ui.upgradeCards = [$('upgradeChain'), $('upgradeWave')];
+    ui.upgradeDescriptions = [$('upgradeChainDescription'), $('upgradeWaveDescription')];
+    ui.upgradeLevels = [$('upgradeChainLevel'), $('upgradeWaveLevel')];
+    ui.upgradeProgress = [$('upgradeChainProgress'), $('upgradeWaveProgress')];
+    ui.upgradeCursors = { Left: $('upgradeCursorLeft'), Right: $('upgradeCursorRight') };
 
     const COLORS = ['#2de2e6', '#ff2a6d', '#f9f871', '#72f1b8', '#9b5de5'];
     const ARROW = { left: '←', right: '→', up: '↑', down: '↓' };
@@ -739,6 +807,24 @@
     const RETURN_MARKER_SIZE = 96;
     const MAX_HAND_SPAN = 220;
     const POWER_CLEAR_RADIUS = 190;
+    const MAX_INCOMING = 4;
+    const BOSS_RECOVERY = 25;
+    const UPGRADE_HOLD_MS = 1000;
+    const UPGRADE_DAMAGE = 12;
+    const MAX_CHAIN_JUMPS = 3;
+    const WAVE_RADIUS_STEP = 60;
+    const MAX_WAVE_BONUS = 240;
+    const MIN_FIRE_INTERVAL = 900;
+    const ATTACK_PATTERNS = {
+      alternate: { pairedGap: 0, pauseScale: 1 },
+      stagger: { pairedGap: 400, pauseScale: 1.25 },
+      mixed: { pairedGap: 750, pauseScale: 1.3 }
+    };
+    const PULSE_TYPES = {
+      normal: { flightDelta: 0, catchDelta: 0, size: 1 },
+      heavy: { flightDelta: 1300, catchDelta: 1000, size: 1.24 },
+      light: { flightDelta: -200, catchDelta: 100, size: 0.72 }
+    };
     const TUTORIAL_KEY = 'hand-return-intro-v1';
     let tutorialCompleted = false;
     try { tutorialCompleted = localStorage.getItem(TUTORIAL_KEY) === 'done'; } catch {}
@@ -760,12 +846,15 @@
       attack: 'PULSE INCOMING', counter: 'RETURN WINDOW', returning: 'PULSE RETURN', recover: 'COOL DOWN',
       bossWarning: 'THREAT ALERT', bossIntro: 'OMEGA ONLINE',
       finalIntro: 'CORE EXPOSED', final: 'FINAL SEQUENCE', bossDefeated: 'CORE COLLAPSE', loopTransition: 'LOOP SHIFT', win: 'COMPLETE', lose: 'FAILED',
-      calibrate: 'CALIBRATION'
+      calibrate: 'CALIBRATION', upgrade: 'CORE SALVAGE'
     };
 
     const game = {
       time: performance.now(), hitStopRemaining: 0,
       tutorial: { active: false, step: 'return' },
+      upgrades: { chain: 0, wave: 0 }, upgradeChoice: -1, upgradeSince: 0,
+      upgradeArmed: false, upgradeReadyAt: 0, upgradeBounds: [],
+      attackPattern: null, patternBag: [], lastPattern: null,
       state: 'idle', stateAt: performance.now(), nextAt: 0, phase: 'squad', loop: 1,
       playerHp: 100, enemies: [], activeEnemy: 0, shooterCursor: 0, attackSide: 'left',
       guardAt: -Infinity, guardPoint: null, enemyShots: [], shotOriginOffset: { x: -90, y: 0 },
@@ -838,6 +927,7 @@
       game.bossAt = now + RUN_DURATION;
       game.nextEnemySpawnAt = now + 850;
       game.nextEnemyShotAt = now + 1200;
+      resetAttackPatterns();
       updateHud();
       say('READY / DUAL RETURN', 'ここから同時に2発。ボスを目指して進もう');
     }
@@ -905,6 +995,7 @@
       }
       ctx.setTransform(renderRatio * viewScale, 0, 0, renderRatio * viewScale, 0, 0);
       ctx.imageSmoothingEnabled = false;
+      if (game.state === 'upgrade') cacheUpgradeBounds();
     }
 
     const canvasResizeObserver = typeof ResizeObserver === 'function'
@@ -1001,7 +1092,7 @@
 
     function maxIncomingCount() {
       if (game.tutorial.active) return 1;
-      return BATTLE_PROFILE.maxIncoming + Math.max(0, game.loop - 1);
+      return Math.min(MAX_INCOMING, BATTLE_PROFILE.maxIncoming + Math.max(0, game.loop - 1));
     }
 
     function activeEnemyLimit() {
@@ -1060,6 +1151,10 @@
           bar.style.width = '0%';
           bar.parentElement?.classList.add('off');
         });
+      } else if (game.phase === 'upgrade') {
+        ui.targetName.textContent = `LOOP ${game.loop} CLEAR / CORE SALVAGE`;
+        ui.enemyHp.textContent = 'SAFE ZONE';
+        ui.enemyHealths.forEach(bar => { bar.parentElement.style.display = 'none'; });
       } else if (game.phase === 'loop-transition') {
         ui.targetName.textContent = `LOOP SHIFT / NEXT ${game.loop}`;
         ui.enemyHp.textContent = `${activeEnemyLimit()} UNITS / MAX ${maxIncomingCount()} PULSES`;
@@ -1130,9 +1225,13 @@
       ui.start.hidden = true;
       ui.calibration.hidden = true;
       ui.result.hidden = true;
+      ui.upgrade.hidden = true;
       ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
       game.phase = 'squad';
       game.loop = 1;
+      game.upgrades = { chain: 0, wave: 0 };
+      game.upgradeChoice = -1;
+      game.upgradeSince = 0;
       game.score = 0;
       updateScore();
       game.playerHp = 100;
@@ -1182,6 +1281,7 @@
     }
 
     function beginAdvance(now, bossPending = false, firstRun = false) {
+      resetAttackPatterns();
       game.bossPending = bossPending;
       game.enemyShots = [];
       game.playerShots = [];
@@ -1285,13 +1385,16 @@
       }
     }
 
-    function chooseImpact(origin, occupied = [], collisionTravel = 0.45) {
+    function chooseImpact(origin, occupied = [], collisionTravel = 0.45, side = 0) {
       const hands = visibleHands().map(hand => ({ x: hand.x, y: hand.y }));
       if (!hands.length) hands.push({ x: 0.5, y: 0.62 });
       let impact = { x: 0.2, y: 0.52 };
       let impactFound = false;
       for (let attempt = 0; attempt < 28; attempt++) {
-        const candidate = { x: 0.08 + Math.random() * 0.84, y: 0.12 + Math.random() * 0.76 };
+        const candidate = {
+          x: side < 0 ? 0.12 + Math.random() * 0.3 : side > 0 ? 0.58 + Math.random() * 0.3 : 0.08 + Math.random() * 0.84,
+          y: side ? 0.2 + Math.random() * 0.6 : 0.12 + Math.random() * 0.76
+        };
         impact = candidate;
         const collisionStart = {
           x: origin.x + (candidate.x - origin.x) * collisionTravel,
@@ -1308,11 +1411,13 @@
         }
       }
       if (!impactFound) {
-        const anchors = [
+        let anchors = [
           { x: 0.1, y: 0.16 }, { x: 0.5, y: 0.14 }, { x: 0.9, y: 0.18 },
           { x: 0.12, y: 0.5 }, { x: 0.88, y: 0.52 },
           { x: 0.14, y: 0.84 }, { x: 0.5, y: 0.86 }, { x: 0.88, y: 0.82 }
         ];
+        if (side) anchors = anchors.filter(point => side < 0 ? point.x < 0.5 : point.x > 0.5)
+          .map(point => ({ x: Math.max(0.12, Math.min(0.88, point.x)), y: Math.max(0.2, Math.min(0.8, point.y)) }));
         impact = anchors.reduce((best, candidate) => {
           const distances = hands.map(hand => Math.hypot(candidate.x - hand.x, candidate.y - hand.y));
           occupied.forEach(point => distances.push(Math.hypot(candidate.x - point.x, candidate.y - point.y)));
@@ -1333,7 +1438,40 @@
       });
     }
 
-    function spawnEnemyShot(now) {
+    function resetAttackPatterns() {
+      game.attackPattern = null;
+      game.lastPattern = null;
+      game.patternBag = game.loop === 1 ? Object.keys(ATTACK_PATTERNS) : [];
+    }
+
+    function nextAttackPattern() {
+      if (!game.patternBag.length) {
+        game.patternBag = Object.keys(ATTACK_PATTERNS);
+        for (let i = game.patternBag.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [game.patternBag[i], game.patternBag[j]] = [game.patternBag[j], game.patternBag[i]];
+        }
+        if (game.patternBag[0] === game.lastPattern) [game.patternBag[0], game.patternBag[1]] = [game.patternBag[1], game.patternBag[0]];
+      }
+      const id = game.patternBag.shift();
+      const side = Math.random() < 0.5 ? -1 : 1;
+      game.attackPattern = { id, index: 0, side };
+      game.lastPattern = id;
+      return game.attackPattern;
+    }
+
+    function attackPatternStep() {
+      const pattern = game.attackPattern || nextAttackPattern();
+      const pairedSide = pattern.index < 2 ? pattern.side : -pattern.side;
+      return {
+        pattern: pattern.id,
+        side: pattern.id === 'alternate' ? pattern.side * (pattern.index % 2 ? -1 : 1) : pairedSide * (pattern.index % 2 ? -1 : 1),
+        kind: pattern.id === 'mixed' ? (pattern.index % 2 ? 'light' : 'heavy') : 'normal'
+      };
+    }
+
+    function spawnEnemyShot(now, patternStep = null) {
+      if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncomingCount()) return false;
       const profile = BATTLE_PROFILE;
       const alive = game.enemies
         .map((enemy, index) => enemy.hp > 0 ? index : -1)
@@ -1373,9 +1511,13 @@
         damage = profile.squadDamage;
       }
       const origin = { x: port.x / W, y: port.y / H };
+      const kind = game.tutorial.active ? 'normal' : (patternStep?.kind || 'normal');
+      const pulseType = PULSE_TYPES[kind];
+      flight += pulseType.flightDelta;
+      catchWindow += pulseType.catchDelta;
       const catchStartTravel = Math.pow((flight - catchWindow) / flight, curve);
       const lesson = game.tutorial.active ? game.tutorial.step : null;
-      let impact = chooseImpact(origin, occupied, catchStartTravel);
+      let impact = chooseImpact(origin, occupied, catchStartTravel, patternStep?.side || 0);
       if (lesson) {
         const hand = visibleHands()[lesson === 'catch' ? 1 : 0] || visibleHands()[0];
         impact = {
@@ -1399,6 +1541,9 @@
         order,
         color,
         lesson,
+        kind,
+        sizeScale: pulseType.size,
+        pattern: patternStep?.pattern || 'tutorial',
         contact: null,
         resolved: false,
         captured: false,
@@ -1416,13 +1561,23 @@
       const profile = BATTLE_PROFILE;
       const maxIncoming = maxIncomingCount();
       if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
-      if (!spawnEnemyShot(now)) {
+      const step = game.tutorial.active ? null : attackPatternStep();
+      if (!spawnEnemyShot(now, step)) {
         game.nextEnemyShotAt = now + 180;
         return;
       }
       const [minimum, maximum] = game.phase === 'boss' ? profile.bossInterval : profile.squadInterval;
       const scale = loopFireScale();
-      game.nextEnemyShotAt = now + (minimum + Math.random() * (maximum - minimum)) * scale;
+      const interval = Math.max(MIN_FIRE_INTERVAL, (minimum + Math.random() * (maximum - minimum)) * scale);
+      let gap = interval;
+      if (step) {
+        const pattern = game.attackPattern;
+        const rhythm = ATTACK_PATTERNS[pattern.id];
+        gap = rhythm.pairedGap && pattern.index % 2 === 0 ? rhythm.pairedGap : interval * rhythm.pauseScale;
+        pattern.index += 1;
+        if (pattern.index >= 4) game.attackPattern = null;
+      }
+      game.nextEnemyShotAt = now + gap;
     }
 
     function beginAttack(now) {
@@ -1530,11 +1685,12 @@
         ? handStates().filter(item => item.held?.fusionId === held.fusionId)
         : [hand];
       const power = Math.max(...fusionHands.map(item => item.shakePower));
-      const damage = isFused
+      const baseDamage = isFused
         ? Math.round(90 + power * 70)
         : isPowerReturn
           ? Math.round(36 + power * 54)
           : Math.round(18 + power * 24);
+      const damage = baseDamage + (isPowerReturn || isFused ? (game.upgrades.chain + game.upgrades.wave) * UPGRADE_DAMAGE : 0);
       const pose = enemyPose(game.time, targetIndex);
       const launchPoint = isFused ? fusionCenter() : { x: end.x * W, y: end.y * H };
       game.playerShots.push({
@@ -1550,6 +1706,9 @@
         fused: isFused,
         strong: isPowerReturn,
         lesson: held.lesson,
+        chainRemaining: isPowerReturn ? Math.min(MAX_CHAIN_JUMPS, game.upgrades.chain) : 0,
+        chainVisited: [targetIndex],
+        waveBonus: Math.min(MAX_WAVE_BONUS, game.upgrades.wave * WAVE_RADIUS_STEP),
         resolved: false
       });
       fusionHands.forEach(item => {
@@ -1609,8 +1768,8 @@
       if (['read', 'attack'].includes(game.state)) say('SHOT BLOCKED', 'まずPULSEを手でブロックする');
     }
 
-    function clearNearbyShots(point, power, now) {
-      const radius = POWER_CLEAR_RADIUS + power * 70;
+    function clearNearbyShots(point, power, now, waveBonus = 0) {
+      const radius = POWER_CLEAR_RADIUS + power * 70 + waveBonus;
       let cleared = 0;
       for (const shot of game.enemyShots) {
         if (shot.resolved || shot.contact || shot.lesson) continue;
@@ -1634,17 +1793,18 @@
       playerShot.resolved = true;
       let enemy = game.enemies[playerShot.targetIndex];
       if (!enemy || enemy.hp <= 0) {
-        const replacement = game.enemies.findIndex(unit => unit.hp > 0);
+        const replacement = game.enemies.findIndex((unit, index) => unit.hp > 0 && (!playerShot.isChain || !playerShot.chainVisited?.includes(index)));
         if (replacement < 0) {
           maybeFinishExchange(now);
           return;
         }
         playerShot.targetIndex = replacement;
+        if (playerShot.isChain) playerShot.chainVisited.push(replacement);
         enemy = game.enemies[replacement];
         const pose = enemyPose(now, replacement);
         playerShot.to = { x: pose.x, y: pose.y };
       }
-      if (playerShot.strong || playerShot.fused) clearNearbyShots(playerShot.to, playerShot.power, now);
+      if (playerShot.strong || playerShot.fused) clearNearbyShots(playerShot.to, playerShot.power, now, playerShot.waveBonus || 0);
       if (playerShot.fused && game.phase === 'squad') {
         const victims = [
           playerShot.targetIndex,
@@ -1717,7 +1877,24 @@
       } else if (game.tutorial.active && playerShot.lesson === 'catch' && playerShot.strong) {
         finishTutorial(now);
       }
+      queueChainReturn(playerShot, now);
       maybeFinishExchange(now);
+    }
+
+    function queueChainReturn(shot, now) {
+      if (!shot.strong || shot.lesson || !(shot.chainRemaining > 0) || game.phase !== 'squad') return false;
+      const visited = shot.chainVisited || [shot.targetIndex];
+      const candidates = game.enemies.map((enemy, index) => ({ enemy, index, pose: enemyPose(now, index) }))
+        .filter(item => item.enemy.hp > 0 && !visited.includes(item.index))
+        .sort((a, b) => Math.hypot(a.pose.x - shot.to.x, a.pose.y - shot.to.y) - Math.hypot(b.pose.x - shot.to.x, b.pose.y - shot.to.y));
+      const target = candidates[0];
+      if (!target) return false;
+      game.playerShots.push({ ...shot, from: { ...shot.to }, to: { x: target.pose.x, y: target.pose.y },
+        targetIndex: target.index, born: now, flight: 280, resolved: false,
+        chainRemaining: shot.chainRemaining - 1, chainVisited: [...visited, target.index], isChain: true });
+      say(`CHAIN RETURN / ${visited.length}`, '強返球が次の敵へ連鎖');
+      tone(700 + visited.length * 130, 0.09, 0.035);
+      return true;
     }
 
     function updatePlayerShots(now) {
@@ -1757,6 +1934,7 @@
     }
 
     function beginLoopTransition(now) {
+      ui.upgrade.hidden = true;
       const completedLoop = game.loop;
       addScore(4000, completedLoop);
       game.loop += 1;
@@ -1767,10 +1945,84 @@
       clearHandActions();
       setState('loopTransition', now);
       updateHud();
-      say(`LOOP ${completedLoop} COMPLETE`, `LOOP ${game.loop} / BOSS ${bossMaxHp()} HP / MAX ${maxIncomingCount()} PULSES`);
+      say(`LOOP ${completedLoop} COMPLETE`, `CHAIN Lv.${game.upgrades.chain} / WAVE Lv.${game.upgrades.wave} / NEXT MAX ${maxIncomingCount()} PULSES`);
       game.nextAt = now + 2200;
       tone(120, 0.18, 0.05);
       setTimeout(() => tone(480, 0.22, 0.045), 120);
+    }
+
+    function cacheUpgradeBounds() {
+      const stageRect = stage.getBoundingClientRect();
+      game.upgradeBounds = ui.upgradeCards.map(card => {
+        const rect = card.getBoundingClientRect();
+        return { left: (rect.left - stageRect.left) / stageRect.width, right: (rect.right - stageRect.left) / stageRect.width,
+          top: (rect.top - stageRect.top) / stageRect.height, bottom: (rect.bottom - stageRect.top) / stageRect.height };
+      });
+    }
+
+    function beginUpgradeChoice(now) {
+      if (game.phase !== 'boss-destroyed') return;
+      const healed = Math.min(BOSS_RECOVERY, 100 - game.playerHp);
+      game.playerHp += healed;
+      game.phase = 'upgrade';
+      game.nextAt = Infinity;
+      game.upgradeChoice = -1;
+      game.upgradeSince = 0;
+      game.upgradeArmed = false;
+      game.upgradeReadyAt = performance.now() + 500;
+      ui.upgrade.hidden = false;
+      ui.upgradeRecovery.textContent = healed ? `HP +${healed} RECOVERED  /  ${Math.round(game.playerHp)} / 100` : 'HP FULL  /  100 / 100';
+      const nextChain = Math.min(MAX_CHAIN_JUMPS, game.upgrades.chain + 1);
+      const nextWave = Math.min(MAX_WAVE_BONUS, (game.upgrades.wave + 1) * WAVE_RADIUS_STEP);
+      ui.upgradeDescriptions[0].textContent = `強返球が別の敵へ${nextChain}回連鎖\n強返球の威力 +${UPGRADE_DAMAGE}`;
+      ui.upgradeDescriptions[1].textContent = `強返球の弾消し範囲 +${Math.round(nextWave / POWER_CLEAR_RADIUS * 100)}%\n強返球の威力 +${UPGRADE_DAMAGE}`;
+      ui.upgradeLevels[0].textContent = `CHAIN Lv.${game.upgrades.chain} → ${game.upgrades.chain + 1}`;
+      ui.upgradeLevels[1].textContent = `WAVE Lv.${game.upgrades.wave} → ${game.upgrades.wave + 1}`;
+      ui.upgradeProgress.forEach(bar => { bar.style.width = '0%'; });
+      ui.upgradeCards.forEach(card => card.classList.remove('is-targeted'));
+      ui.upgradeHelp.textContent = '手をいったん枠の外へ。選ぶ枠で片手を1秒キープ。';
+      setState('upgrade', now);
+      cacheUpgradeBounds();
+      updateHud();
+      tone(660, 0.16, 0.035);
+    }
+
+    function selectUpgrade(index, now = game.time) {
+      if (game.state !== 'upgrade' || ![0, 1].includes(index)) return false;
+      const key = index === 0 ? 'chain' : 'wave';
+      game.upgrades[key] += 1;
+      burst(W * (index ? 0.72 : 0.28), H * 0.5, 65);
+      beginLoopTransition(now);
+      return true;
+    }
+
+    function updateUpgradeSelection(now) {
+      if (game.state !== 'upgrade') return;
+      const choices = new Set();
+      for (const hand of handStates()) {
+        const cursor = ui.upgradeCursors[hand.id];
+        cursor.hidden = !hand.visible;
+        cursor.style.left = `${hand.x * 100}%`;
+        cursor.style.top = `${hand.y * 100}%`;
+        if (!hand.visible || !hand.open) continue;
+        game.upgradeBounds.forEach((box, index) => {
+          if (hand.x >= box.left && hand.x <= box.right && hand.y >= box.top && hand.y <= box.bottom) choices.add(index);
+        });
+      }
+      if (!choices.size) game.upgradeArmed = true;
+      const candidate = game.upgradeArmed && now >= game.upgradeReadyAt && choices.size === 1 ? [...choices][0] : -1;
+      if (candidate !== game.upgradeChoice) {
+        game.upgradeChoice = candidate;
+        game.upgradeSince = now;
+      }
+      const progress = candidate < 0 ? 0 : Math.min(1, (now - game.upgradeSince) / UPGRADE_HOLD_MS);
+      ui.upgradeCards.forEach((card, index) => card.classList.toggle('is-targeted', index === candidate));
+      ui.upgradeProgress.forEach((bar, index) => { bar.style.width = `${index === candidate ? progress * 100 : 0}%`; });
+      ui.upgradeHelp.textContent = !game.upgradeArmed ? '手をいったん枠の外へ。選ぶ枠で片手を1秒キープ。'
+        : choices.size > 1 ? '選ぶ枠だけに、片手を置いてください。'
+          : candidate < 0 ? '選ぶ枠へ片手のひらを置いて、1秒キープ。休憩しても大丈夫。'
+            : `そのままキープ… ${Math.round(progress * 100)}%`;
+      if (progress >= 1) selectUpgrade(candidate);
     }
 
     function startNextLoop(now) {
@@ -1786,6 +2038,7 @@
     }
 
     function beginBossWarning(now) {
+      resetAttackPatterns();
       game.phase = 'boss-warning';
       game.warningAnnounced = false;
       game.enemyShots = [];
@@ -1841,6 +2094,7 @@
       game.retrySince = 0;
       game.retryReadyAt = performance.now() + 900;
       ui.result.hidden = false;
+      ui.upgrade.hidden = true;
       ui.resultGesture.textContent = 'RETRY // SHOW BOTH OPEN PALMS';
       if (won) {
         const clean = game.stats.wrong === 0 && game.stats.early === 0;
@@ -1887,7 +2141,7 @@
       else if (game.state === 'bossWarning' && now >= game.nextAt) spawnBoss(now);
       else if (game.state === 'bossIntro' && now >= game.nextAt) beginRead(now);
       else if (game.state === 'read' && now >= game.nextAt) beginAttack(now);
-      else if (game.state === 'bossDefeated' && now >= game.nextAt) beginLoopTransition(now);
+      else if (game.state === 'bossDefeated' && now >= game.nextAt) beginUpgradeChoice(now);
       else if (game.state === 'loopTransition' && now >= game.nextAt) startNextLoop(now);
       else if (game.state === 'win' && game.nextAt && now >= game.nextAt && ui.result.hidden) {
         game.nextAt = 0;
@@ -2139,6 +2393,7 @@
 
     function updateSmoothedHandControls(now) {
       if (input.mode !== 'camera' || game.state === 'calibrate') return;
+      if (game.state === 'upgrade') { updateUpgradeSelection(now); return; }
       const hands = visibleHands();
       if (!hands.length) return;
       tryFuseHeldShots(now);
@@ -2201,7 +2456,7 @@
         y: shot.from.y + (shot.target.y - shot.from.y) * travel,
         progress,
         travel,
-        radius: 3 + Math.pow(travel, 1.25) * 49
+        radius: (3 + Math.pow(travel, 1.25) * 49) * (shot.sizeScale || 1)
       };
     }
 
@@ -2559,7 +2814,7 @@
         const travel = Math.pow(pastProgress, enemyShot.curve || 2.35);
         const x = enemyShot.from.x + (enemyShot.target.x - enemyShot.from.x) * travel;
         const y = enemyShot.from.y + (enemyShot.target.y - enemyShot.from.y) * travel;
-        const radius = 3 + Math.pow(travel, 1.25) * 49;
+        const radius = (3 + Math.pow(travel, 1.25) * 49) * (enemyShot.sizeScale || 1);
         ctx.globalAlpha = (1 - index / 8) * (0.18 + travel * 0.48);
         ctx.strokeStyle = COLORS[(enemyShot.color + index) % COLORS.length];
         ctx.lineWidth = travel > 0.65 ? 2 : 1;
@@ -2590,6 +2845,13 @@
       }
 
       pulseBall(shot.x, shot.y, shot.radius, now * 0.016, enemyShot.color);
+      if (enemyShot.kind === 'heavy') {
+        ctx.fillStyle = '#f9f871';
+        const size = Math.max(3, shot.radius * 0.18);
+        for (const [dx, dy] of [[-1,-1], [1,-1], [-1,1], [1,1]]) {
+          ctx.fillRect(Math.round(shot.x + dx * shot.radius * 0.65 - size / 2), Math.round(shot.y + dy * shot.radius * 0.65 - size / 2), size, size);
+        }
+      }
       polygon(shot.x, shot.y, shot.radius * (1.2 + shot.travel * 0.28), 4, Math.PI / 4, '#ffffff', shot.travel > 0.72 ? 2 : 1, 0.16 + shot.travel * 0.5);
     }
 
@@ -3074,6 +3336,9 @@
       ctx.fillStyle = '#72f1b8';
       ctx.font = '800 17px ui-monospace, monospace';
       ctx.fillText(`UNITS ${activeEnemyLimit()} / BOSS HP ${bossMaxHp()} / INCOMING MAX ${maxIncomingCount()}`, W * 0.5, H * 0.57);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 15px ui-monospace, monospace';
+      ctx.fillText(`CHAIN Lv.${game.upgrades.chain}  /  WAVE Lv.${game.upgrades.wave}  /  POWER +${(game.upgrades.chain + game.upgrades.wave) * UPGRADE_DAMAGE}`, W * 0.5, H * 0.64);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
