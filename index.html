@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#000000">
-  <meta name="description" content="両手で迫る弾を直接打ち返すか、柔らかく受け止めて強力弾として返すハンドトラッキング・ブラウザゲーム。">
+  <meta name="description" content="パーで迫る弾に手を合わせ、グーでつかみ、その手を振って投げ返すハンドトラッキング・ブラウザゲーム。">
   <title>HAND//RETURN — Soft Catch. Hard Return.</title>
   <style>
     :root {
@@ -679,8 +679,8 @@
           <h1>HAND//RETURN</h1>
           <p class="tagline">SOFT CATCH. HARD RETURN.</p>
           <p class="lead">
-            画面に向けて両手を構え、奥から来る弾へ手を当ててRETURN。<br>
-            柔らかく受け止めてから投げると、強力なPOWER RETURNになります。<br>
+            パーで弾の枠に手を合わせ、グーでキャッチ。<br>
+            つかんだ手をさっと振るか、カメラに向けて押し出すと投げ返せます。<br>
             最初の2発で操作をつかんだら、敵2機の連続戦へ。<br>
             POWER RETURNの衝撃波は、近くの敵弾も消します。<br>
             ボスを倒すとHP回復。6種類からランダムな強化2択。同時飛来は最大4発。
@@ -691,6 +691,7 @@
           </div>
           <p class="note" id="startNote"></p>
           <p class="privacy">
+            開始時に手の認識モデルを読み込むため、ネット接続が必要です。<br>
             カメラと両手が必要です。映像・座標はブラウザ内で処理し、保存・送信しません。
           </p>
         </div>
@@ -757,7 +758,7 @@
     </main>
 
     <footer class="footer">
-      <span>CAMERA + DUAL HANDS ONLY　DIRECT RETURN OR SOFT CATCH　BOSS REWARD: HEAL + UPGRADE　MAX 4 PULSES</span>
+      <span>CAMERA + DUAL HANDS ONLY　OPEN → GRIP → THROW　BOSS REWARD: HEAL + UPGRADE　MAX 4 PULSES</span>
     </footer>
   </div>
 
@@ -815,14 +816,16 @@
       [13,17],[17,18],[18,19],[19,20],[0,17]
     ];
     const HAND_IDS = ['Left', 'Right'];
+    const HAND_TRACKING_GRACE_MS = 180;
+    const GRIP_TRANSITION_MS = 700;
+    const CATCH_GRACE_MS = 240;
+    const CATCH_PADDING = 16;
+    const HOLD_SETTLE_MS = 110;
     const THROW_DISTANCE = 0.045;
-    const THROW_SPEED = 0.0001;
+    const THROW_SPEED = 0.00032;
+    const FORWARD_THROW_SCALE = 1.22;
     const THROW_WINDOW = 220;
-    const DIRECT_RETURN_DISTANCE = 0.032;
-    const DIRECT_RETURN_SPEED = 0.00022;
-    const DIRECT_RETURN_WINDOW = 180;
-    const CONTACT_SETTLE_TIME = 90;
-    const RETURN_MARKER_SIZE = 96;
+    const CATCH_MARKER_SIZE = 96;
     const MAX_HAND_SPAN = 220;
     const POWER_CLEAR_RADIUS = 190;
     const MAX_INCOMING = 4;
@@ -833,7 +836,6 @@
     const WAVE_RADIUS_STEP = 60;
     const MAX_WAVE_BONUS = 240;
     const POWER_DAMAGE_STEP = 24;
-    const DIRECT_DAMAGE_STEP = 12;
     const AUTO_CHARGE_PER_SECOND = 0.25;
     const ARMOR_REDUCTION_STEP = 0.15;
     const VITALITY_HP_STEP = 20;
@@ -843,7 +845,7 @@
       wave: { name: '弾消し範囲アップ', code: 'WAVE', color: '#72f1b8', max: MAX_WAVE_BONUS / WAVE_RADIUS_STEP,
         describe: rank => `弾消し半径 +${Math.round((rank + 1) * WAVE_RADIUS_STEP / POWER_CLEAR_RADIUS * 100)}%\n強返球の威力 +${UPGRADE_DAMAGE}` },
       power: { name: '返球ブースト', code: 'POWER', color: '#ff6e9e', max: Infinity,
-        describe: () => `直接返球の威力 +${DIRECT_DAMAGE_STEP}\n強返球の威力 +${POWER_DAMAGE_STEP}` },
+        describe: () => `投げ返した弾の威力 +${POWER_DAMAGE_STEP}` },
       charge: { name: 'オートチャージ', code: 'CHARGE', color: '#f9f871', max: 3,
         describe: rank => `保持中に毎秒${Math.round((rank + 1) * AUTO_CHARGE_PER_SECOND * 100)}%充填\n持つだけで威力アップ` },
       armor: { name: 'ダメージ軽減', code: 'ARMOR', color: '#7ca8ff', max: 3,
@@ -862,7 +864,7 @@
       heavy: { flightDelta: 1300, catchDelta: 1000, size: 1.24 },
       light: { flightDelta: -200, catchDelta: 100, size: 0.72 }
     };
-    const TUTORIAL_KEY = 'hand-return-intro-v1';
+    const TUTORIAL_KEY = 'hand-return-intro-v2';
     let tutorialCompleted = false;
     try { tutorialCompleted = localStorage.getItem(TUTORIAL_KEY) === 'done'; } catch {}
     const RUN_DURATION = 30000;
@@ -917,7 +919,7 @@
 
     const game = {
       time: performance.now(), hitStopRemaining: 0,
-      tutorial: { active: false, step: 'return' },
+      tutorial: { active: false, step: 1 },
       upgrades: emptyUpgrades(), upgradeOffers: [], lastUpgrade: null, upgradeChoice: -1, upgradeSince: 0,
       upgradeArmed: false, upgradeReadyAt: 0, upgradeBounds: [],
       attackPattern: null, patternBag: [], lastPattern: null,
@@ -939,18 +941,18 @@
 
     function createHand(id, x) {
       return {
-        id, visible: false, open: false, previousOpen: false,
+        id, visible: false, detected: false, pose: 'neutral',
         calibrationSince: 0, calibrationLocked: false,
         target: [], drawn: [], samples: [], x, y: 0.64,
-        interceptSamples: [], throwSamples: [], launchReadyAt: 0,
+        lastOpenAt: -Infinity, gripAt: -Infinity, throwSamples: [], launchReadyAt: 0,
         lastSeenAt: -Infinity,
         held: null, shakePower: 0, guardAt: -Infinity, guardPoint: null,
-        lastStrikeAt: -Infinity, attackAnchor: null, lastMotion: null, lastMotionVector: null
+        palmSample: null, catchDirection: null, lastMotionVector: null
       };
     }
 
     const input = {
-      mode: 'camera', visible: false, open: false, previousOpen: false,
+      mode: 'camera', visible: false,
       target: [], drawn: [], samples: [], lastStrikeAt: -Infinity,
       x: 0.5, y: 0.62, calibrationSince: 0, calibrationCompleteAt: 0,
       hands: { Left: createHand('Left', 0.32), Right: createHand('Right', 0.68) }
@@ -980,9 +982,9 @@
     }
 
     function tutorialHint() {
-      if (game.tutorial.step === 'catch') return '次は、枠へ手を運んで止める。柔らかく受け止めよう';
-      if (game.tutorial.step === 'throw' || heldHands().length) return 'つかめた！ 手を短く振って、POWER RETURN';
-      return 'RETURNの枠へ手を当てて、最初の1機を壊そう';
+      if (heldHands().length) return 'つかめた！ その手をさっと振るか、前に押し出して投げよう';
+      if (game.playerShots.some(shot => !shot.resolved)) return '返球中…';
+      return `${game.tutorial.step}球目 ／ パーで弾の枠に手を合わせて、グーでつかもう`;
     }
 
     function finishTutorial(now) {
@@ -1018,7 +1020,6 @@
         game.enemyShots.forEach(shot => {
           resizePoint(shot.from, scaleX, scaleY);
           resizePoint(shot.target, scaleX, scaleY);
-          resizePoint(shot.contact?.position, scaleX, scaleY);
         });
         game.playerShots.forEach(shot => {
           resizePoint(shot.from, scaleX, scaleY);
@@ -1078,6 +1079,10 @@
       return handStates().filter(hand => hand.visible);
     }
 
+    function hasFreshTracking(hand, now) {
+      return hand.detected && now - hand.lastSeenAt <= HAND_TRACKING_GRACE_MS;
+    }
+
     function heldHands() {
       return handStates().filter(hand => hand.held);
     }
@@ -1101,7 +1106,7 @@
     function tryFuseHeldShots(now) {
       const left = input.hands.Left;
       const right = input.hands.Right;
-      if (!left.visible || !right.visible || !left.held || !right.held || fusedHold()) return false;
+      if (!left.held || !right.held || fusedHold() || !hasFreshTracking(left, now) || !hasFreshTracking(right, now)) return false;
       const gap = Math.hypot((left.x - right.x) * W, (left.y - right.y) * H);
       if (gap > FUSION_DISTANCE) return false;
       const center = fusionCenter();
@@ -1119,8 +1124,8 @@
       const fusionPower = Math.min(1, Math.max(left.shakePower, right.shakePower) + 0.35);
       left.shakePower = fusionPower;
       right.shakePower = fusionPower;
-      resetAttackMotion(left, now);
-      resetAttackMotion(right, now);
+      resetThrowMotion(left, now);
+      resetThrowMotion(right, now);
       burst(center.x, center.y, 72);
       tone(180, 0.16, 0.05);
       setTimeout(() => tone(720, 0.2, 0.045), 70);
@@ -1133,12 +1138,12 @@
         hand.shakePower = 0;
         hand.guardAt = -Infinity;
         hand.guardPoint = null;
-        hand.attackAnchor = null;
-        hand.lastMotion = null;
+        hand.palmSample = null;
+        hand.catchDirection = null;
         hand.lastMotionVector = null;
-        hand.lastStrikeAt = -Infinity;
+        hand.lastOpenAt = -Infinity;
+        hand.gripAt = -Infinity;
         hand.samples.length = 0;
-        hand.interceptSamples.length = 0;
         hand.throwSamples.length = 0;
         hand.launchReadyAt = 0;
       });
@@ -1213,9 +1218,9 @@
     function upgradeRank(key) { return game.upgrades[key] || 0; }
     function playerMaxHp() { return 100 + upgradeRank('vitality') * VITALITY_HP_STEP; }
     function armorReduction() { return Math.min(UPGRADES.armor.max, upgradeRank('armor')) * ARMOR_REDUCTION_STEP; }
-    function returnDamageBonus(strong) {
-      return upgradeRank('power') * (strong ? POWER_DAMAGE_STEP : DIRECT_DAMAGE_STEP)
-        + (strong ? (upgradeRank('chain') + upgradeRank('wave')) * UPGRADE_DAMAGE : 0);
+    function returnDamageBonus() {
+      return upgradeRank('power') * POWER_DAMAGE_STEP
+        + (upgradeRank('chain') + upgradeRank('wave')) * UPGRADE_DAMAGE;
     }
 
     function updateHud() {
@@ -1314,7 +1319,7 @@
     function startBattle() {
       const now = game.time;
       game.hitStopRemaining = 0;
-      game.tutorial = { active: !tutorialCompleted, step: 'return' };
+      game.tutorial = { active: !tutorialCompleted, step: 1 };
       ui.start.hidden = true;
       ui.calibration.hidden = true;
       ui.result.hidden = true;
@@ -1627,7 +1632,8 @@
       const lesson = game.tutorial.active ? game.tutorial.step : null;
       let impact = chooseImpact(origin, occupied, catchStartTravel, patternStep?.side || 0, patternStep?.area);
       if (lesson) {
-        const hand = visibleHands()[lesson === 'catch' ? 1 : 0] || visibleHands()[0];
+        const hands = visibleHands();
+        const hand = hands[lesson - 1] || hands[0];
         impact = {
           x: Math.max(0.2, Math.min(0.8, hand?.x ?? 0.42)),
           y: Math.max(0.25, Math.min(0.75, hand?.y ?? 0.58))
@@ -1654,7 +1660,7 @@
         pattern: patternStep?.pattern || 'tutorial',
         area: patternStep?.area || null,
         bossType: patternStep?.bossType || null,
-        contact: null,
+        openTouchAt: { Left: -Infinity, Right: -Infinity },
         resolved: false,
         captured: false,
         capturedBy: null
@@ -1667,7 +1673,7 @@
 
     function updateEnemyFire(now) {
       if (game.state !== 'attack' || !['squad', 'boss'].includes(game.phase)) return;
-      if (game.tutorial.active && (heldHands().length || game.playerShots.length || game.tutorial.step === 'throw')) return;
+      if (game.tutorial.active && (heldHands().length || game.playerShots.length)) return;
       const profile = BATTLE_PROFILE;
       const maxIncoming = maxIncomingCount();
       if (game.enemyShots.filter(shot => !shot.resolved).length >= maxIncoming || now < game.nextEnemyShotAt) return;
@@ -1701,7 +1707,7 @@
       setState('attack', now);
       game.nextEnemyShotAt = now;
       say(game.phase === 'boss' ? `${bossProfile().name} / ${bossProfile().label}` : 'PULSE STREAM INBOUND',
-        game.phase === 'boss' ? bossProfile().hint : '弾の接近に合わせてRETURN');
+        game.phase === 'boss' ? bossProfile().hint : 'パーで弾に合わせ、グーでキャッチ');
       game.nextAt = Infinity;
       updateEnemyFire(now);
       tone(380, 0.05);
@@ -1716,47 +1722,69 @@
       return dy < 0 ? 'up' : 'down';
     }
 
-    function resetAttackMotion(hand, now = performance.now()) {
-      const point = { x: hand.x, y: hand.y, t: now };
-      hand.attackAnchor = point;
-      hand.lastMotion = point;
+    function resetThrowMotion(hand, now, catchDirection = null) {
+      hand.catchDirection = catchDirection;
       hand.lastMotionVector = null;
-      hand.samples.length = 0;
-      hand.throwSamples = [point];
+      hand.throwSamples.length = 0;
+      hand.launchReadyAt = now + HOLD_SETTLE_MS;
       hand.chargeAt = now;
     }
 
     function updateHoldCharge(hand, now) {
       const elapsed = Math.min(100, Math.max(0, now - (hand.chargeAt ?? now)));
       hand.chargeAt = now;
-      if (!hand.visible || !(hand.held?.softCatch || hand.held?.fused)) return;
       const rate = Math.min(UPGRADES.charge.max, upgradeRank('charge')) * AUTO_CHARGE_PER_SECOND;
       hand.shakePower = Math.min(1, hand.shakePower + rate * elapsed / 1000);
     }
 
-    function throwMetrics(start, end, now) {
-      const distance = Math.hypot(end.x - start.x, end.y - start.y);
-      const duration = Math.max(1, now - (start.t ?? now));
-      return { distance, duration, speed: distance / duration };
+    function samplePalm(points, previous, now) {
+      const palm = points[9];
+      const palmLength = distance(points[0], palm);
+      const palmWidth = distance(points[5], points[17]);
+      const sample = { x: palm.x, y: palm.y, palmLength, palmWidth, t: now, direction: null };
+      if (!previous || now - previous.t > HAND_TRACKING_GRACE_MS) return sample;
+      const dx = palm.x - previous.x, dy = palm.y - previous.y;
+      // Express a throw-sized increase in apparent palm size in the same units as a sideways flick.
+      const previousSize = previous.palmLength + previous.palmWidth;
+      const growth = previousSize ? (palmLength + palmWidth) / previousSize - 1 : 0;
+      const dz = growth * THROW_DISTANCE / (FORWARD_THROW_SCALE - 1);
+      const travel = Math.hypot(dx, dy, dz);
+      if (travel > THROW_SPEED * (now - previous.t)) {
+        sample.direction = { x: dx / travel, y: dy / travel, z: dz / travel };
+      }
+      return sample;
     }
 
-    function trackAttackMotion(hand, point, now, canLaunch = true) {
-      if (!hand.held || !['attack', 'counter'].includes(game.state)) return;
-      if (!hand.attackAnchor || !hand.lastMotion) resetAttackMotion(hand, now);
-      updateHoldCharge(hand, now);
-      const current = { x: point.x, y: point.y, t: now };
-      const vx = current.x - hand.lastMotion.x;
-      const vy = current.y - hand.lastMotion.y;
-      const step = Math.hypot(vx, vy);
-      hand.throwSamples.push(current);
+    function trackThrowMotion(hand, now) {
+      const current = hand.palmSample;
+      // A fast reach into the catch ends when the hand slows down or changes direction.
+      if (hand.catchDirection) {
+        const reach = hand.catchDirection, motion = current.direction;
+        const alignment = motion ? reach.x * motion.x + reach.y * motion.y + reach.z * motion.z : 0;
+        if (alignment < 0.65) hand.catchDirection = null;
+      }
+      if (now < hand.launchReadyAt || hand.catchDirection) {
+        hand.throwSamples = [current];
+        return;
+      }
       hand.throwSamples = hand.throwSamples.filter(sample => now - sample.t <= THROW_WINDOW);
-      const launchStart = hand.throwSamples[0];
-      const metrics = throwMetrics(launchStart, current, now);
-      const shouldLaunch = canLaunch
-        && now >= hand.launchReadyAt
-        && metrics.distance >= THROW_DISTANCE
-        && metrics.speed >= THROW_SPEED
-        && metrics.duration >= 70;
+      const launchStart = hand.throwSamples.find(sample => {
+        const travel = Math.hypot(current.x - sample.x, current.y - sample.y);
+        const swing = travel >= THROW_DISTANCE && travel >= THROW_SPEED * (now - sample.t);
+        const forward = current.palmLength > sample.palmLength * FORWARD_THROW_SCALE
+          && current.palmWidth > sample.palmWidth * FORWARD_THROW_SCALE;
+        return swing || forward;
+      });
+      const last = hand.throwSamples.at(-1);
+      hand.throwSamples.push(current);
+      if (launchStart) {
+        throwHeld(hand, launchStart, current, now);
+        return;
+      }
+      if (!last) return;
+      const vx = current.x - last.x;
+      const vy = current.y - last.y;
+      const step = Math.hypot(vx, vy);
 
       if (step >= 0.006) {
         const previous = hand.lastMotionVector;
@@ -1765,56 +1793,34 @@
           if (dot < -0.3) {
             const before = hand.shakePower;
             hand.shakePower = Math.min(1, hand.shakePower + 0.07 + Math.min(0.18, step * 2.8));
-            if (!shouldLaunch) hand.attackAnchor = current;
             if (hand.shakePower > before) {
-              say(`${hand.id.toUpperCase()} PULSE CHARGING`, `POWER ${Math.round(hand.shakePower * 100)}% ／ その手を素早く返してRETURN`);
+              say(`${hand.id.toUpperCase()} PULSE CHARGING`, `POWER ${Math.round(hand.shakePower * 100)}% ／ その手を振って投げよう`);
               tone(280 + hand.shakePower * 240, 0.035, 0.012);
             }
           }
         }
         hand.lastMotionVector = { x: vx, y: vy, length: step };
-        hand.lastMotion = current;
-      }
-
-      if (!canLaunch || !['attack', 'counter'].includes(game.state)) return;
-      if (shouldLaunch) {
-        throwHeld(hand, launchStart, current, now);
       }
     }
 
-    function throwHeld(hand, start, end, now = performance.now(), bypassStrength = false) {
-      if (!hand?.held || now - hand.lastStrikeAt < 230) return false;
-      const metrics = throwMetrics(start, end, now);
-      if (!bypassStrength && (metrics.distance < THROW_DISTANCE || metrics.speed < THROW_SPEED)) {
-        say(`${hand.id.toUpperCase()} THROW TOO WEAK`, '手首を返すように素早くRETURN');
-        tone(95, 0.08, 0.02);
-        resetAttackMotion(hand, now);
-        return false;
-      }
-      hand.lastStrikeAt = now;
+    function throwHeld(hand, start, end, now) {
       const held = hand.held;
       const isFused = !!held.fused;
-      const isPowerReturn = !isFused && !!held.softCatch;
-      const isDirectReturn = !isFused && !!held.directReturn;
       let targetIndex = held.enemyIndex;
       if (!game.enemies[targetIndex] || game.enemies[targetIndex].hp <= 0) {
         targetIndex = game.enemies.findIndex(enemy => enemy.hp > 0);
       }
       if (targetIndex < 0) return false;
-      const effect = { start, end, born: now, ok: false };
-      strikes.push(effect);
+      strikes.push({ start, end, born: now, ok: true });
       tone(240, 0.04, 0.015);
-      effect.ok = true;
       const fusionHands = isFused
         ? handStates().filter(item => item.held?.fusionId === held.fusionId)
         : [hand];
       const power = Math.max(...fusionHands.map(item => item.shakePower));
       const baseDamage = isFused
         ? Math.round(90 + power * 70)
-        : isPowerReturn
-          ? Math.round(36 + power * 54)
-          : Math.round(18 + power * 24);
-      const damage = baseDamage + returnDamageBonus(isPowerReturn || isFused);
+        : Math.round(36 + power * 54);
+      const damage = baseDamage + returnDamageBonus();
       const pose = enemyPose(game.time, targetIndex);
       const launchPoint = isFused ? fusionCenter() : { x: end.x * W, y: end.y * H };
       game.playerShots.push({
@@ -1828,9 +1834,9 @@
         color: held.color,
         handId: hand.id,
         fused: isFused,
-        strong: isPowerReturn,
+        strong: !isFused,
         lesson: held.lesson,
-        chainRemaining: isPowerReturn ? Math.min(MAX_CHAIN_JUMPS, upgradeRank('chain')) : 0,
+        chainRemaining: isFused ? 0 : Math.min(MAX_CHAIN_JUMPS, upgradeRank('chain')),
         chainVisited: [targetIndex],
         waveBonus: Math.min(MAX_WAVE_BONUS, upgradeRank('wave') * WAVE_RADIUS_STEP),
         resolved: false
@@ -1838,65 +1844,45 @@
       fusionHands.forEach(item => {
         item.held = null;
         item.shakePower = 0;
-        item.lastStrikeAt = now;
-        resetAttackMotion(item, now);
+        item.throwSamples.length = 0;
       });
       game.stats.strikes += 1;
       game.stats.maxPower = Math.max(game.stats.maxPower, power);
-      addScore(isFused ? 120 : isPowerReturn ? 100 : 50);
+      addScore(isFused ? 120 : 100);
       say(`${hand.id.toUpperCase()} PULSE RETURNED / ${damage} DMG`,
-        isFused
-          ? 'RETURN CONFIRMED'
-          : isPowerReturn
-            ? `POWER RETURN / CHARGE ${Math.round(power * 100)}%`
-            : isDirectReturn
-              ? 'DIRECT RETURN'
-              : (heldHands().length ? 'もう一方の手もRETURN可能' : `SHAKE POWER ${Math.round(power * 100)}%`));
-      tone(isFused ? 860 : isPowerReturn ? 720 + power * 260 : 520 + power * 180,
-        isFused ? 0.18 : isPowerReturn ? 0.14 : 0.09,
-        isFused ? 0.055 : isPowerReturn ? 0.05 : 0.04);
+        isFused ? 'FUSION RETURN' : `POWER RETURN / CHARGE ${Math.round(power * 100)}%`);
+      tone(isFused ? 860 : 720 + power * 260, isFused ? 0.18 : 0.14, isFused ? 0.055 : 0.05);
       return true;
     }
 
-    function strike(dir, start, end, now = performance.now(), handId = 'Right') {
-      const hand = input.hands[handId]?.held ? input.hands[handId] : heldHands()[0];
-      if (hand && ['attack', 'counter'].includes(game.state)) {
-        throwHeld(hand, start, end, now, start.t == null || end.t == null);
-        return;
+    function strike(dir, start, end, now) {
+      if (game.state !== 'final' || now - input.lastStrikeAt < 230) return;
+      input.lastStrikeAt = now;
+      const effect = { start, end, born: now, ok: false };
+      strikes.push(effect);
+      const expected = FINAL[game.finalIndex];
+      if (dir === expected) {
+        effect.ok = true;
+        game.finalIndex += 1;
+        updateHud();
+        burst(end.x * W, end.y * H, 12);
+        tone(300 + game.finalIndex * 120, 0.08);
+        if (game.finalIndex >= FINAL.length) finishFinal(game.time);
+        else say(`SEQUENCE ${game.finalIndex}/3`, `NEXT ${ARROW[FINAL[game.finalIndex]]}`);
+      } else {
+        game.stats.wrong += 1;
+        game.finalIndex = 0;
+        updateHud();
+        say('SEQUENCE RESET', '↑ ← ↓');
+        tone(75, 0.1);
       }
-
-      if (game.state === 'final') {
-        if (now - input.lastStrikeAt < 230) return;
-        input.lastStrikeAt = now;
-        const effect = { start, end, born: now, ok: false };
-        strikes.push(effect);
-        const expected = FINAL[game.finalIndex];
-        if (dir === expected) {
-          effect.ok = true;
-          game.finalIndex += 1;
-          updateHud();
-          burst(end.x * W, end.y * H, 12);
-          tone(300 + game.finalIndex * 120, 0.08);
-          if (game.finalIndex >= FINAL.length) finishFinal(game.time);
-          else say(`SEQUENCE ${game.finalIndex}/3`, `NEXT ${ARROW[FINAL[game.finalIndex]]}`);
-        } else {
-          game.stats.wrong += 1;
-          game.finalIndex = 0;
-          updateHud();
-          say('SEQUENCE RESET', '↑ ← ↓');
-          tone(75, 0.1);
-        }
-        return;
-      }
-
-      if (['read', 'attack'].includes(game.state)) say('SHOT BLOCKED', 'まずPULSEを手でブロックする');
     }
 
     function clearNearbyShots(point, power, now, waveBonus = 0) {
       const radius = POWER_CLEAR_RADIUS + power * 70 + waveBonus;
       let cleared = 0;
       for (const shot of game.enemyShots) {
-        if (shot.resolved || shot.contact || shot.lesson) continue;
+        if (shot.resolved || shot.lesson) continue;
         const position = shotPosition(now, shot);
         if (!position || Math.hypot(position.x - point.x, position.y - point.y) > radius + position.radius) continue;
         shot.resolved = true;
@@ -1994,11 +1980,11 @@
         }
         say(`${playerShot.handId.toUpperCase()} RETURN / ${playerShot.damage} DAMAGE`, enemy.boss ? `${enemyBossProfile(enemy).name} / HP ${Math.round(enemy.hp)}` : `UNIT ${playerShot.targetIndex + 1} HP ${Math.round(enemy.hp)}`);
       }
-      if (game.tutorial.active && playerShot.lesson === 'return') {
-        game.tutorial.step = 'catch';
+      if (game.tutorial.active && playerShot.lesson === 1) {
+        game.tutorial.step = 2;
         game.nextEnemyShotAt = now + 1400;
         say('NICE RETURN!', tutorialHint());
-      } else if (game.tutorial.active && playerShot.lesson === 'catch' && playerShot.strong) {
+      } else if (game.tutorial.active && playerShot.lesson === 2) {
         finishTutorial(now);
       }
       queueChainReturn(playerShot, now);
@@ -2157,7 +2143,7 @@
         cursor.hidden = !hand.visible;
         cursor.style.left = `${hand.x * 100}%`;
         cursor.style.top = `${hand.y * 100}%`;
-        if (!hand.visible || !hand.open) continue;
+        if (!hand.visible || hand.pose !== 'open') continue;
         game.upgradeBounds.forEach((box, index) => {
           if (hand.x >= box.left && hand.x <= box.right && hand.y >= box.top && hand.y <= box.bottom) choices.add(index);
         });
@@ -2266,7 +2252,7 @@
       }
     }
 
-    function update(now) {
+    function update(now, inputNow) {
       const updateDelta = Math.max(0, Math.min(50, now - game.lastUpdateAt));
       game.lastUpdateAt = now;
       if (game.phase === 'squad' || game.phase === 'boss-warning') game.travel += updateDelta * 0.00135;
@@ -2282,9 +2268,9 @@
       if (game.state === 'attack') {
         maintainEnemyStream(now);
         updateEnemyFire(now);
-        tryHandBlock(now);
+        tryHandCatch(now, inputNow);
         resolveExpiredShots(now);
-        tryFuseHeldShots(performance.now());
+        tryFuseHeldShots(inputNow);
         game.enemyShots = game.enemyShots.filter(shot => !shot.resolved);
       }
       if (game.state === 'intro' && now >= game.nextAt) beginRead(now);
@@ -2309,20 +2295,38 @@
       return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
     }
 
-    function openPalm(landmarks) {
-      const palm = landmarks[9];
-      const fingers = [[8,6], [12,10], [16,14], [20,18]];
+    function handPose(landmarks) {
       let extended = 0;
-      for (const [tip, pip] of fingers) {
-        if (distance(landmarks[tip], palm) > distance(landmarks[pip], palm) * 1.42) extended += 1;
+      let curled = 0;
+      for (const base of [5, 9, 13, 17]) {
+        const knuckle = landmarks[base], pip = landmarks[base + 1];
+        const dip = landmarks[base + 2], tip = landmarks[base + 3];
+        const length = distance(knuckle, pip) + distance(pip, dip) + distance(dip, tip);
+        if (!length) continue;
+        const reach = distance(knuckle, tip) / length;
+        if (reach >= 0.88) extended++;
+        else if (reach <= 0.74) curled++;
       }
-      return extended >= 3;
+      if (extended >= 3) return 'open';
+      if (curled >= 3) return 'fist';
+      return 'neutral';
+    }
+
+    function updateGrip(hand, now) {
+      if (hand.held || game.state !== 'attack') return;
+      if (hand.pose === 'open') {
+        hand.lastOpenAt = now;
+        hand.gripAt = -Infinity;
+      } else if (hand.pose === 'fist' && now - hand.lastOpenAt <= GRIP_TRANSITION_MS) {
+        hand.gripAt = now;
+        hand.lastOpenAt = -Infinity;
+      }
     }
 
     function updateCalibrationPanel(hand, now) {
       const panel = ui.calibrationHands[hand.id];
       const status = ui.calibrationStatuses[hand.id];
-      const tracking = hand.visible && hand.open && !hand.calibrationLocked;
+      const tracking = hand.visible && hand.pose === 'open' && !hand.calibrationLocked;
       panel.classList.toggle('tracking', tracking);
       panel.classList.toggle('is-locked', hand.calibrationLocked);
 
@@ -2348,7 +2352,7 @@
 
     function processCalibration(now) {
       handStates().forEach(hand => {
-        if (!hand.calibrationLocked && hand.visible && hand.open) {
+        if (!hand.calibrationLocked && hand.visible && hand.pose === 'open') {
           if (!hand.calibrationSince) hand.calibrationSince = now;
           if (now - hand.calibrationSince >= 650) {
             hand.calibrationLocked = true;
@@ -2389,6 +2393,7 @@
       });
 
       detected.slice(0, 2).forEach((raw, index) => {
+        if (raw.length !== 21) return;
         const category = result?.handednesses?.[index]?.[0]?.categoryName
           || result?.handedness?.[index]?.[0]?.categoryName;
         let id = category === 'Left' || category === 'Right'
@@ -2397,17 +2402,28 @@
         if (used.has(id)) id = id === 'Left' ? 'Right' : 'Left';
         used.add(id);
         const hand = input.hands[id];
+        if (now - hand.lastSeenAt > HAND_TRACKING_GRACE_MS) {
+          hand.lastOpenAt = -Infinity;
+          hand.gripAt = -Infinity;
+          hand.drawn = [];
+          if (hand.held) resetThrowMotion(hand, now);
+        }
         hand.detected = true;
         hand.visible = true;
         hand.lastSeenAt = now;
         hand.target = raw.map(point => ({ x: 1 - point.x, y: point.y, z: point.z }));
-        hand.previousOpen = hand.open;
-        hand.open = openPalm(hand.target);
+        hand.palmSample = samplePalm(hand.target, hand.palmSample, now);
+        const world = result.worldLandmarks?.[index];
+        hand.pose = handPose(world?.length === 21 ? world : raw);
+        updateGrip(hand, now);
       });
 
       handStates().forEach(hand => {
-        if (hand.detected || now - hand.lastSeenAt <= 180) return;
+        if (hand.detected) return;
+        if (hand.visible && hand.held) resetThrowMotion(hand, now);
+        if (now - hand.lastSeenAt <= HAND_TRACKING_GRACE_MS) return;
         hand.visible = false;
+        hand.pose = 'neutral';
         hand.target = [];
         hand.drawn = [];
       });
@@ -2431,7 +2447,6 @@
       input.visible = true;
       input.x = hands[0].x;
       input.y = hands[0].y;
-      input.open = hands.some(hand => hand.open);
       const holding = heldHands().map(hand => hand.id[0].toUpperCase()).join('+');
       ui.hand.textContent = `HANDS ${hands.length}/2${holding ? ` / HOLD ${holding}` : ''}`;
       ui.hand.classList.add('live');
@@ -2443,7 +2458,7 @@
 
       if (['win', 'lose'].includes(game.state) && !ui.result.hidden) {
         if (now < game.retryReadyAt) return;
-        if (hands.length === 2 && hands.every(hand => hand.open)) {
+        if (hands.length === 2 && hands.every(hand => hand.pose === 'open')) {
           if (!game.retrySince) game.retrySince = now;
           const progress = Math.min(100, Math.round((now - game.retrySince) / 10));
           ui.resultGesture.textContent = `RETRY // DUAL PALM ${progress}%`;
@@ -2507,9 +2522,15 @@
         showCalibration();
       } catch (error) {
         console.error(error);
-        ui.startNote.textContent = location.protocol === 'file:'
-          ? 'CAMERA REQUIRES HTTPS OR LOCALHOST.'
-          : 'CAMERA LINK FAILED. CAMERA ACCESS IS REQUIRED.';
+        if (!navigator.mediaDevices?.getUserMedia) {
+          ui.startNote.textContent = 'PCのChromeでHTMLを開くか、HTTPSのページから起動してください。';
+        } else if (!landmarker) {
+          ui.startNote.textContent = '手の認識モデルを読み込めませんでした。ネット接続を確認してください。';
+        } else if (error.name === 'NotAllowedError') {
+          ui.startNote.textContent = 'ブラウザでカメラの使用を許可して、もう一度開始してください。';
+        } else {
+          ui.startNote.textContent = 'カメラを開始できませんでした。カメラの接続と使用状況を確認してください。';
+        }
         ui.cameraStart.disabled = false;
       }
     }
@@ -2547,19 +2568,17 @@
       }
     }
 
-    function updateSmoothedHandControls(now) {
+    function updateHandControls(now) {
       if (input.mode !== 'camera' || game.state === 'calibrate') return;
       if (game.state === 'upgrade') { updateUpgradeSelection(now); return; }
       const hands = visibleHands();
       if (!hands.length) return;
       tryFuseHeldShots(now);
       hands.forEach(hand => {
-        const motionPoint = { x: hand.x, y: hand.y, t: now };
-        if (!hand.held && game.state === 'attack') {
-          hand.interceptSamples.push(motionPoint);
-          hand.interceptSamples = hand.interceptSamples.filter(sample => now - sample.t <= DIRECT_RETURN_WINDOW);
-        } else hand.interceptSamples.length = 0;
-        if (hand.held) trackAttackMotion(hand, motionPoint, now, true);
+        if (!hand.held || game.state !== 'attack' || !hasFreshTracking(hand, now)) return;
+        updateHoldCharge(hand, now);
+        // Only camera samples count as throws. Drawing can still be catching up to the grab.
+        if (hand.lastSeenAt === now) trackThrowMotion(hand, now);
       });
       if (game.state !== 'final') {
         hands.forEach(hand => { hand.samples.length = 0; });
@@ -2576,7 +2595,7 @@
       const dy = end.y - start.y;
       const elapsed = Math.max(1, end.t - start.t);
       if (Math.hypot(dx, dy) >= 0.065 && Math.hypot(dx, dy) / elapsed >= 0.00022) {
-        strike(direction(dx, dy), start, end, now, hand.id);
+        strike(direction(dx, dy), start, end, now);
         hand.samples = [{ x: end.x, y: end.y, t: now }];
       }
     }
@@ -2602,7 +2621,6 @@
 
     function shotPosition(now, shot) {
       if (!shot) return null;
-      if (shot.contact) return { ...shot.contact.position };
       const elapsed = now - shot.born;
       if (elapsed < 0) return null;
       const progress = Math.max(0, Math.min(1, elapsed / shot.flight));
@@ -2625,27 +2643,13 @@
       return Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t));
     }
 
-    function directReturnMotion(hand, now) {
-      const samples = hand.interceptSamples.filter(sample => now - sample.t <= DIRECT_RETURN_WINDOW);
-      if (samples.length < 2) return null;
-      const start = samples[0];
-      const end = samples.at(-1);
-      const metrics = throwMetrics(start, end, now);
-      if (metrics.duration < 70 || metrics.distance < DIRECT_RETURN_DISTANCE || metrics.speed < DIRECT_RETURN_SPEED) return null;
-      const recent = samples.filter(sample => now - sample.t <= 70);
-      if (recent.length < 2) return null;
-      const recentMetrics = throwMetrics(recent[0], end, now);
-      let peakSpeed = 0;
-      for (let i = 1; i < samples.length; i++) {
-        peakSpeed = Math.max(peakSpeed, throwMetrics(samples[i - 1], samples[i], samples[i].t).speed);
-      }
-      // Moving into position and then braking is a soft catch, not a strike.
-      if (recentMetrics.speed < DIRECT_RETURN_SPEED || recentMetrics.speed < peakSpeed * 0.55) return null;
-      return { start, end, ...metrics };
+    function inCatchWindow(shot, now) {
+      const remaining = shot.born + shot.flight - now;
+      return remaining <= shot.catchWindow && remaining >= -CATCH_GRACE_MS;
     }
 
-    function returnMarkerBounds(shot) {
-      const size = Math.max(RETURN_MARKER_SIZE, shot.radius * 2 + 12);
+    function catchMarkerBounds(shot, padding = 0) {
+      const size = Math.max(CATCH_MARKER_SIZE, shot.radius * 2 + 12) + 2 * padding;
       return { left: shot.x - size / 2, right: shot.x + size / 2,
         top: shot.y - size / 2, bottom: shot.y + size / 2, size };
     }
@@ -2671,89 +2675,59 @@
     }
 
     function handTouchesMarker(points, shot) {
-      const box = returnMarkerBounds(shot);
+      const box = catchMarkerBounds(shot, CATCH_PADDING);
       return HAND_BONES.some(([a, b]) => segmentIntersectsBox(points[a], points[b], box));
     }
 
-    function tryHandBlock(now, inputNow = performance.now()) {
-      for (const enemyShot of game.enemyShots) {
-        if (enemyShot.resolved) continue;
-        const shot = shotPosition(now, enemyShot);
-        if (!shot) continue;
-        const remaining = enemyShot.flight - (now - enemyShot.born);
-        if (!enemyShot.contact && enemyShot.catchWindow) {
-          if (remaining < 0 || remaining > enemyShot.catchWindow) continue;
-        } else if (!enemyShot.contact && !enemyShot.catchWindow && shot.travel < 0.45) continue;
-        if (enemyShot.contact) {
-          const owner = input.hands[enemyShot.contact.handId];
-          if (!owner?.visible || owner.held) {
-            enemyShot.contact = null;
-            continue;
-          }
-          const continuation = throwMetrics(enemyShot.contact.palm, owner, inputNow);
-          const carriedThrough = enemyShot.lesson !== 'catch' && continuation.duration >= 30
-            && continuation.distance >= 0.014 && directReturnMotion(owner, inputNow);
-          if (inputNow - enemyShot.contact.at < CONTACT_SETTLE_TIME && !carriedThrough) continue;
+    function catchShot(hand, shot, position, now) {
+      shot.resolved = true;
+      shot.captured = true;
+      shot.capturedBy = hand.id;
+      game.volleyCaptured++;
+      game.stats.guards++;
+      addScore(100);
+      game.guardAt = now;
+      game.guardPoint = { x: position.x, y: position.y };
+      hand.held = {
+        enemyIndex: shot.shooter, color: shot.color, lesson: shot.lesson,
+        capturedAt: now, lastPoint: { x: position.x, y: position.y }
+      };
+      hand.gripAt = -Infinity;
+      hand.shakePower = 0;
+      hand.guardAt = now;
+      hand.guardPoint = { x: position.x, y: position.y };
+      resetThrowMotion(hand, now, hand.palmSample.direction);
+      burst(position.x, position.y, 30);
+      say(`${hand.id.toUpperCase()} CATCH`, 'その手をさっと振るか、前に押し出して投げよう');
+      tone(620 + game.volleyCaptured * 35, 0.08);
+    }
+
+    function tryHandCatch(now, inputNow) {
+      if (!game.enemyShots.length) return;
+      for (const hand of visibleHands()) {
+        if (hand.held || !hasFreshTracking(hand, inputNow)) continue;
+        const gripping = inputNow - hand.gripAt <= CATCH_GRACE_MS;
+        if (!gripping && hand.pose !== 'open') continue;
+        const points = handPoints(hand.id);
+        if (!points.length) continue;
+        let nearest = null;
+        for (const shot of game.enemyShots) {
+          if (shot.resolved || !inCatchWindow(shot, now)) continue;
+          const position = shotPosition(now, shot);
+          const touching = handTouchesMarker(points, position);
+          if (touching && hand.pose === 'open') shot.openTouchAt[hand.id] = inputNow;
+          // A grip can slightly precede contact or follow a touch from the open fingers.
+          if (!gripping || (!touching && inputNow - shot.openTouchAt[hand.id] > CATCH_GRACE_MS)) continue;
+          const gap = Math.hypot(position.x - points[9].x, position.y - points[9].y);
+          if (!nearest || gap < nearest.gap) nearest = { shot, position, gap };
         }
-        for (const hand of visibleHands()) {
-          if (hand.held) continue;
-          if (enemyShot.contact && enemyShot.contact.handId !== hand.id) continue;
-          const points = handPoints(hand.id);
-          if (points.length !== 21) continue;
-          if (!enemyShot.contact) {
-            if (!handTouchesMarker(points, shot)) continue;
-            if (game.enemyShots.some(other => !other.resolved && other.contact?.handId === hand.id)) continue;
-            enemyShot.contact = { handId: hand.id, at: inputNow, position: shot,
-              palm: { x: hand.x, y: hand.y, t: inputNow } };
-            hand.guardAt = inputNow;
-            hand.guardPoint = { x: shot.x, y: shot.y };
-            break;
-          }
-          const continuedDistance = throwMetrics(enemyShot.contact.palm, hand, inputNow).distance;
-          const directMotion = enemyShot.lesson !== 'catch' && continuedDistance >= 0.014 && inputNow - hand.lastStrikeAt >= 230
-            ? directReturnMotion(hand, inputNow) : null;
-          enemyShot.resolved = true;
-          enemyShot.captured = true;
-          enemyShot.capturedBy = hand.id;
-          game.volleyCaptured += 1;
-          game.stats.guards += 1;
-          addScore(100);
-          game.guardAt = inputNow;
-          game.guardPoint = { x: shot.x, y: shot.y };
-          hand.held = {
-            enemyIndex: enemyShot.shooter,
-            color: enemyShot.color,
-            capturedAt: inputNow,
-            lesson: enemyShot.lesson,
-            lastPoint: { x: shot.x, y: shot.y },
-            softCatch: !directMotion,
-            directReturn: !!directMotion
-          };
-          hand.shakePower = 0;
-          hand.guardAt = inputNow;
-          hand.guardPoint = { x: shot.x, y: shot.y };
-          burst(shot.x, shot.y, 30);
-          hand.interceptSamples.length = 0;
-          if (directMotion) {
-            throwHeld(hand, directMotion.start, directMotion.end, inputNow, true);
-            burst(shot.x, shot.y, 48);
-          } else {
-            resetAttackMotion(hand, inputNow);
-            hand.launchReadyAt = inputNow + (enemyShot.lesson === 'catch' ? 300 : 110);
-            if (enemyShot.lesson === 'catch') game.tutorial.step = 'throw';
-            const held = heldHands().map(item => item.id[0].toUpperCase()).join(' + ');
-            say(`${hand.id.toUpperCase()} SOFT CATCH`, `${held} HOLDING / FLICK FOR POWER RETURN`);
-            tone(620 + game.volleyCaptured * 35, 0.08);
-          }
-          break;
-        }
+        if (nearest) catchShot(hand, nearest.shot, nearest.position, inputNow);
       }
-      maybeFinishExchange(now);
     }
 
     function resolveExpiredShots(now) {
       for (const enemyShot of game.enemyShots) {
-        if (enemyShot.resolved || enemyShot.contact || now - enemyShot.born < enemyShot.flight) continue;
+        if (enemyShot.resolved || now <= enemyShot.born + enemyShot.flight + CATCH_GRACE_MS) continue;
         enemyShot.resolved = true;
         enemyShot.captured = false;
         if (enemyShot.lesson) {
@@ -3020,10 +2994,10 @@
       polygon(shot.x, shot.y, shot.radius * (1.2 + shot.travel * 0.28), 4, Math.PI / 4, '#ffffff', shot.travel > 0.72 ? 2 : 1, 0.16 + shot.travel * 0.5);
     }
 
-    function drawReturnMarker(shot, now) {
+    function drawCatchMarker(shot, now, withinReach) {
       const pulse = 0.5 + Math.sin(now * 0.02) * 0.5;
-      const { size } = returnMarkerBounds(shot);
-      const color = '#72f1b8';
+      const { size } = catchMarkerBounds(shot);
+      const color = withinReach ? '#f9f871' : '#72f1b8';
       ctx.strokeStyle = '#020409';
       ctx.lineWidth = 7;
       ctx.globalAlpha = 1;
@@ -3043,7 +3017,7 @@
       ctx.font = '900 12px ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('RETURN', shot.x, labelY + 8);
+      ctx.fillText(withinReach ? 'グー！' : 'パー', shot.x, labelY + 8);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
     }
@@ -3243,14 +3217,13 @@
       });
     }
 
-    function drawReturnMarkers(now, effectNow) {
+    function drawCatchMarkers(now, effectNow) {
       if (game.state !== 'attack') return;
       for (const enemyShot of game.enemyShots) {
-        if (enemyShot.resolved) continue;
-        const remaining = enemyShot.flight - (now - enemyShot.born);
-        if (!enemyShot.contact && (remaining < 0 || remaining > enemyShot.catchWindow)) continue;
+        if (enemyShot.resolved || !inCatchWindow(enemyShot, now)) continue;
         const shot = shotPosition(now, enemyShot);
-        if (shot) drawReturnMarker(shot, effectNow);
+        const withinReach = HAND_IDS.some(id => effectNow - enemyShot.openTouchAt[id] <= CATCH_GRACE_MS);
+        if (shot) drawCatchMarker(shot, effectNow, withinReach);
       }
     }
 
@@ -3320,7 +3293,7 @@
         ctx.font = '700 13px ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`${hand.id.toUpperCase()} HOLD / POWER ${Math.round(hand.shakePower * 100)}% / FLICK TO RETURN`, center.x, center.y + 80);
+        ctx.fillText(`${hand.id.toUpperCase()} HOLD / ${Math.round(hand.shakePower * 100)}% ／ 投げる`, center.x, center.y + 80);
       });
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
@@ -3573,8 +3546,8 @@
       }
 
       smoothLandmarks(now);
-      updateSmoothedHandControls(now);
-      update(game.time);
+      updateHandControls(now);
+      update(game.time, now);
       const hurt = Math.max(0, (game.hurtUntil - now) / 420);
       if (hurt > 0) {
         ctx.fillStyle = '#000207';
@@ -3593,7 +3566,7 @@
       drawDamageOverlay(now);
       drawHand(now);
       drawCounter(now);
-      drawReturnMarkers(game.time, now);
+      drawCatchMarkers(game.time, now);
       drawBossWarning(game.time);
       drawLoopTransition(game.time);
       ctx.restore();
